@@ -1,0 +1,93 @@
+[project]
+name = "workspace-auth-middleware"
+version = "0.1.0"
+description = "ASGI middlware for authentication against Google Workspace"
+authors = [
+    {name = "Neale Petrillo",email = "neale@ecovative.com"}
+]
+license-files = ["LICENSE.txt"]
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "google-auth (>=2.41.1,<3.0.0)",
+    "google-api-python-client (>=2.0.0,<3.0.0)",
+    "starlette (>=0.27.0,<1.0.0)",
+    "requests (>=2.32.5,<3.0.0)",
+    "cachetools (>=5.0.0,<7.0.0)"
+]
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.group.dev.dependencies]
+mypy = "^1.18.2"
+ruff = "^0.14.1"
+pytest = "^8.4.2"
+pre-commit = "^4.3.0"
+yamllint = "^1.37.1"
+pytest-xdist = "^3.8.0"
+pytest-asyncio = "^0.24.0"
+httpx = "^0.27.0"
+pytest-mock = "^3.14.0"
+pytest-benchmark = "^5.1.0"
+memory-profiler = "^0.61.0"
+uvicorn = "^0.38.0"
+fastapi = "^0.119.1"
+
+[tool.pytest.ini_options]
+# Pytest configuration for workspace-auth-middleware
+
+# Test discovery patterns
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+# Asyncio configuration
+asyncio_mode = "auto"
+
+# Markers for categorizing tests
+markers = [
+    "integration: Integration tests that may require external services",
+    "adc: Tests that use Application Default Credentials from environment",
+    "slow: Tests that may take longer to run",
+    "benchmark: Performance benchmarking tests"
+]
+
+# Output configuration
+addopts = [
+    "-v",
+    "--tb=short",
+    "--strict-markers",
+    "--disable-warnings"
+]
+
+# Test paths
+testpaths = ["tests"]
+
+
+# Coverage configuration (when using pytest-cov)
+[tool.coverage.run]
+source = ["workspace_auth_middleware"]
+omit = [
+    "tests/*",
+    "*/__pycache__/*"
+]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+
+
+# Benchmark configuration (for pytest-benchmark)
+[tool.pytest-benchmark]
+autosave = true
+compare = false
+min_rounds = 5
+max_time = 2.0
+disable = false
+storage = "file://.benchmarks"
+histogram = true
+name_format = "normal"
+

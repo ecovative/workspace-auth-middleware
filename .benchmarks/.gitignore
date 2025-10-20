@@ -1,0 +1,5 @@
+# Ignore all benchmark data except the baseline
+*
+!.gitignore
+!*/
+!**/0001_baseline.json
