@@ -103,7 +103,15 @@ class WorkspaceAuthMiddleware(
         fetch_groups: bool = True,
         credentials: typing.Optional[google.auth.credentials.Credentials] = None,
         delegated_admin: typing.Optional[str] = None,
-        on_error: typing.Optional[typing.Callable] = None,
+        on_error: typing.Optional[
+            typing.Callable[
+                [
+                    starlette.requests.HTTPConnection,
+                    starlette.authentication.AuthenticationError,
+                ],
+                starlette.responses.Response,
+            ]
+        ] = None,
     ):
         # Create the backend
         backend = WorkspaceAuthBackend(
@@ -123,7 +131,8 @@ class WorkspaceAuthMiddleware(
 
 
 def default_on_error(
-    conn: starlette.requests.Request, exc: starlette.authentication.AuthenticationError
+    conn: starlette.requests.HTTPConnection,
+    exc: starlette.authentication.AuthenticationError,
 ) -> starlette.responses.JSONResponse:
     """
     Default error handler for authentication failures.
@@ -148,7 +157,8 @@ def default_on_error(
 
 
 def custom_error_handler_example(
-    conn: starlette.requests.Request, exc: starlette.authentication.AuthenticationError
+    conn: starlette.requests.HTTPConnection,
+    exc: starlette.authentication.AuthenticationError,
 ) -> starlette.responses.JSONResponse:
     """
     Example custom error handler.

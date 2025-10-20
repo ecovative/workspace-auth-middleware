@@ -1,5 +1,5 @@
 ---
-name: Deploy Cloud Function
+name: Build Wheel
 
 on:  # yamllint disable-line rule:truthy
   push:

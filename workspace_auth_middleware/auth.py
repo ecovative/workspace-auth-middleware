@@ -107,24 +107,31 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
 
         # Initialize caches
         if self.enable_token_cache:
-            self._token_cache: cachetools.TTLCache = cachetools.TTLCache(
-                maxsize=token_cache_maxsize, ttl=token_cache_ttl
+            self._token_cache: typing.Optional[cachetools.TTLCache[str, typing.Any]] = (
+                cachetools.TTLCache(maxsize=token_cache_maxsize, ttl=token_cache_ttl)
             )
-            self._token_cache_stats = {"hits": 0, "misses": 0}
+            self._token_cache_stats: typing.Optional[typing.Dict[str, int]] = {
+                "hits": 0,
+                "misses": 0,
+            }
         else:
             self._token_cache = None
             self._token_cache_stats = None
 
         if self.enable_group_cache:
-            self._group_cache: cachetools.TTLCache = cachetools.TTLCache(
-                maxsize=group_cache_maxsize, ttl=group_cache_ttl
-            )
-            self._group_cache_stats = {"hits": 0, "misses": 0}
+            self._group_cache: typing.Optional[
+                cachetools.TTLCache[str, typing.List[str]]
+            ] = cachetools.TTLCache(maxsize=group_cache_maxsize, ttl=group_cache_ttl)
+            self._group_cache_stats: typing.Optional[typing.Dict[str, int]] = {
+                "hits": 0,
+                "misses": 0,
+            }
         else:
             self._group_cache = None
             self._group_cache_stats = None
 
         # Use provided credentials or fallback to default application credentials
+        self.credentials: typing.Optional[google.auth.credentials.Credentials]
         if credentials is not None:
             self.credentials = credentials
         elif fetch_groups:
@@ -252,11 +259,12 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
             AuthenticationError if token is invalid
         """
         # Check cache first
-        if self.enable_token_cache and token in self._token_cache:
-            self._token_cache_stats["hits"] += 1
-            return self._token_cache[token]
-
-        if self.enable_token_cache:
+        if isinstance(self._token_cache, cachetools.TTLCache) and isinstance(
+            self._token_cache_stats, dict
+        ):
+            if token in self._token_cache:
+                self._token_cache_stats["hits"] += 1
+                return self._token_cache[token]
             self._token_cache_stats["misses"] += 1
 
         try:
@@ -278,7 +286,7 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
                 )
 
             # Cache the result
-            if self.enable_token_cache:
+            if isinstance(self._token_cache, cachetools.TTLCache):
                 self._token_cache[token] = idinfo
 
             return idinfo
@@ -312,11 +320,12 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
             No exceptions raised - errors are logged and empty list returned
         """
         # Check cache first
-        if self.enable_group_cache and email in self._group_cache:
-            self._group_cache_stats["hits"] += 1
-            return self._group_cache[email]
-
-        if self.enable_group_cache:
+        if isinstance(self._group_cache, cachetools.TTLCache) and isinstance(
+            self._group_cache_stats, dict
+        ):
+            if email in self._group_cache:
+                self._group_cache_stats["hits"] += 1
+                return self._group_cache[email]
             self._group_cache_stats["misses"] += 1
 
         # Check if we have credentials
@@ -341,7 +350,7 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
             )
 
             # Cache the result
-            if self.enable_group_cache:
+            if isinstance(self._group_cache, cachetools.TTLCache):
                 self._group_cache[email] = groups
 
             return groups
@@ -365,10 +374,10 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
             List of group email addresses
         """
         try:
-            import googleapiclient.discovery
+            import googleapiclient.discovery  # type: ignore[import-untyped]
 
             # Build the Admin SDK service
-            service = googleapiclient.discovery.build(
+            service = googleapiclient.discovery.build(  # type: ignore[no-untyped-call]
                 "admin", "directory_v1", credentials=creds
             )
 
@@ -391,7 +400,9 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
         """
         stats = {}
 
-        if self.enable_token_cache:
+        if isinstance(self._token_cache, cachetools.TTLCache) and isinstance(
+            self._token_cache_stats, dict
+        ):
             total = self._token_cache_stats["hits"] + self._token_cache_stats["misses"]
             hit_rate = self._token_cache_stats["hits"] / total if total > 0 else 0.0
             stats["token_cache"] = {
@@ -405,7 +416,9 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
         else:
             stats["token_cache"] = {"enabled": False}
 
-        if self.enable_group_cache:
+        if isinstance(self._group_cache, cachetools.TTLCache) and isinstance(
+            self._group_cache_stats, dict
+        ):
             total = self._group_cache_stats["hits"] + self._group_cache_stats["misses"]
             hit_rate = self._group_cache_stats["hits"] / total if total > 0 else 0.0
             stats["group_cache"] = {
@@ -427,11 +440,11 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
 
         Useful for testing or when you need to force fresh data.
         """
-        if self.enable_token_cache:
+        if isinstance(self._token_cache, cachetools.TTLCache):
             self._token_cache.clear()
             self._token_cache_stats = {"hits": 0, "misses": 0}
 
-        if self.enable_group_cache:
+        if isinstance(self._group_cache, cachetools.TTLCache):
             self._group_cache.clear()
             self._group_cache_stats = {"hits": 0, "misses": 0}
 
@@ -447,7 +460,10 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
         Returns:
             True if the entry was cached and removed, False otherwise
         """
-        if self.enable_group_cache and email in self._group_cache:
+        if (
+            isinstance(self._group_cache, cachetools.TTLCache)
+            and email in self._group_cache
+        ):
             del self._group_cache[email]
             return True
         return False
@@ -464,7 +480,10 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
         Returns:
             True if the token was cached and removed, False otherwise
         """
-        if self.enable_token_cache and token in self._token_cache:
+        if (
+            isinstance(self._token_cache, cachetools.TTLCache)
+            and token in self._token_cache
+        ):
             del self._token_cache[token]
             return True
         return False
