@@ -50,8 +50,7 @@ app = FastAPI()
 app.add_middleware(
     WorkspaceAuthMiddleware,
     client_id="your-client-id.apps.googleusercontent.com",
-    workspace_domain="example.com",
-    required_domain=True,
+    required_domains=["example.com"],
     fetch_groups=True,
 )
 
@@ -125,8 +124,7 @@ middleware = [
     Middleware(
         WorkspaceAuthMiddleware,
         client_id="your-client-id.apps.googleusercontent.com",
-        workspace_domain="example.com",
-        required_domain=True,
+        required_domains=["example.com"],
         fetch_groups=True,
     )
 ]
@@ -173,12 +171,12 @@ function onSignIn(googleUser) {
 
 ```python
 WorkspaceAuthMiddleware(
-    app,                          # ASGI application
-    client_id: str,               # Google OAuth2 client ID (required)
-    workspace_domain: str = None, # Expected workspace domain (e.g., "example.com")
-    required_domain: bool = True, # Only allow users from workspace_domain
-    fetch_groups: bool = True,    # Fetch user's group memberships
-    on_error: Callable = None,    # Custom error handler
+    app,                                    # ASGI application
+    client_id: str,                         # Google OAuth2 client ID (required)
+    required_domains: List[str] = None,     # List of allowed domains (e.g., ["example.com", "partner.com"])
+                                            # If None, users from any domain are allowed
+    fetch_groups: bool = True,              # Fetch user's group memberships
+    on_error: Callable = None,              # Custom error handler
 )
 ```
 
@@ -224,8 +222,7 @@ from workspace_auth_middleware import WorkspaceAuthBackend
 
 backend = WorkspaceAuthBackend(
     client_id="your-client-id.apps.googleusercontent.com",
-    workspace_domain="example.com",
-    required_domain=True,
+    required_domains=["example.com"],
     fetch_groups=True,
 )
 
@@ -382,7 +379,7 @@ from workspace_auth_middleware import WorkspaceAuthMiddleware
 app.add_middleware(
     WorkspaceAuthMiddleware,
     client_id="your-client-id.apps.googleusercontent.com",
-    workspace_domain="example.com",
+    required_domains=["example.com"],
     fetch_groups=True,
     delegated_admin="admin@example.com",  # Admin for domain-wide delegation
 )
@@ -407,7 +404,7 @@ credentials = service_account.Credentials.from_service_account_file(
 app.add_middleware(
     WorkspaceAuthMiddleware,
     client_id="your-client-id.apps.googleusercontent.com",
-    workspace_domain="example.com",
+    required_domains=["example.com"],
     fetch_groups=True,
     credentials=credentials,
     delegated_admin="admin@example.com",
@@ -428,7 +425,7 @@ credentials = service_account.Credentials.from_service_account_file(
 
 backend = WorkspaceAuthBackend(
     client_id="your-client-id.apps.googleusercontent.com",
-    workspace_domain="example.com",
+    required_domains=["example.com"],
     fetch_groups=True,
     credentials=credentials,
     delegated_admin="admin@example.com",
@@ -460,7 +457,7 @@ Caching is **enabled by default**:
 ```python
 backend = WorkspaceAuthBackend(
     client_id="your-client-id.apps.googleusercontent.com",
-    workspace_domain="example.com",
+    required_domains=["example.com"],
     # Caching is enabled by default with these settings:
     enable_token_cache=True,      # Cache token verification results
     token_cache_ttl=300,           # 5 minutes
@@ -557,7 +554,7 @@ If you don't need group-based authorization, you can disable group fetching:
 app.add_middleware(
     WorkspaceAuthMiddleware,
     client_id="your-client-id.apps.googleusercontent.com",
-    workspace_domain="example.com",
+    required_domains=["example.com"],
     fetch_groups=False,  # No credentials needed
 )
 ```

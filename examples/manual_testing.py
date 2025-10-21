@@ -142,8 +142,7 @@ logger.info(f"  Delegated Admin: {DELEGATED_ADMIN or 'Not set'}")
 app.add_middleware(
     WorkspaceAuthMiddleware,
     client_id=CLIENT_ID,
-    workspace_domain=WORKSPACE_DOMAIN,
-    required_domain=bool(WORKSPACE_DOMAIN),
+    required_domains=[WORKSPACE_DOMAIN] if WORKSPACE_DOMAIN else None,
     fetch_groups=FETCH_GROUPS,
     delegated_admin=DELEGATED_ADMIN,
 )

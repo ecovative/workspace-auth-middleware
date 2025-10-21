@@ -97,9 +97,9 @@ def client_id():
 
 
 @pytest.fixture
-def workspace_domain():
-    """Test Google Workspace domain."""
-    return "example.com"
+def required_domains():
+    """Test Google Workspace domains."""
+    return ["example.com"]
 
 
 @pytest.fixture

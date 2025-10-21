@@ -4,9 +4,9 @@ name: Build Wheel
 on:  # yamllint disable-line rule:truthy
   push:
     branches:
-      - main
+      - '*'
     tags:
-      - 'v*'
+      - '*'
   schedule:
     - cron: '0 8 1,15 * *'
   workflow_dispatch:

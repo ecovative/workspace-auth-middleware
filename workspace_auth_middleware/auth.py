@@ -38,8 +38,9 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
 
     Args:
         client_id: Google OAuth2 client ID for token validation
-        workspace_domain: Expected Google Workspace domain (e.g., "example.com")
-        required_domain: If True, only allow users from workspace_domain
+        required_domains: Optional list of allowed Google Workspace domains (e.g., ["example.com", "partner.com"]).
+                         If specified, only users from these domains will be allowed.
+                         If None, users from any domain are allowed.
         fetch_groups: If True, fetch user's group memberships (requires Admin SDK)
         credentials: Google credentials for Admin SDK calls. If None, uses default
                     application credentials. Must have appropriate scopes for Admin SDK.
@@ -52,7 +53,7 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
 
         backend = WorkspaceAuthBackend(
             client_id="your-client-id.apps.googleusercontent.com",
-            workspace_domain="example.com",
+            required_domains=["example.com"],
             delegated_admin="admin@example.com",  # For group fetching
         )
 
@@ -71,7 +72,7 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
 
         backend = WorkspaceAuthBackend(
             client_id="your-client-id.apps.googleusercontent.com",
-            workspace_domain="example.com",
+            required_domains=["example.com"],
             credentials=credentials,
             delegated_admin="admin@example.com",
         )
@@ -83,8 +84,7 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
     def __init__(
         self,
         client_id: str,
-        workspace_domain: typing.Optional[str] = None,
-        required_domain: bool = True,
+        required_domains: typing.Optional[typing.List[str]] = None,
         fetch_groups: bool = True,
         credentials: typing.Optional[google.auth.credentials.Credentials] = None,
         delegated_admin: typing.Optional[str] = None,
@@ -96,8 +96,7 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
         group_cache_maxsize: int = 500,
     ):
         self.client_id = client_id
-        self.workspace_domain = workspace_domain
-        self.required_domain = required_domain
+        self.required_domains = required_domains
         self.fetch_groups = fetch_groups
         self.delegated_admin = delegated_admin
 
@@ -202,11 +201,10 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
                 )
 
             # Check domain restriction if required
-            if self.required_domain and self.workspace_domain:
-                if domain != self.workspace_domain:
-                    raise starlette.authentication.AuthenticationError(
-                        f"User not from required domain: {self.workspace_domain}"
-                    )
+            if self.required_domains and domain not in self.required_domains:
+                raise starlette.authentication.AuthenticationError(
+                    f"User domain '{domain}' not in allowed domains: {', '.join(self.required_domains)}"
+                )
 
             # Fetch user's groups (placeholder - implement with Admin SDK)
             groups = []

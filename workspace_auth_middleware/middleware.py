@@ -47,8 +47,7 @@ class WorkspaceAuthMiddleware(
         app.add_middleware(
             WorkspaceAuthMiddleware,
             client_id="your-google-client-id.apps.googleusercontent.com",
-            workspace_domain="example.com",
-            required_domain=True,
+            required_domains=["example.com"],
             fetch_groups=True,
         )
         ```
@@ -63,7 +62,7 @@ class WorkspaceAuthMiddleware(
             Middleware(
                 WorkspaceAuthMiddleware,
                 client_id="your-client-id.apps.googleusercontent.com",
-                workspace_domain="example.com",
+                required_domains=["example.com"],
             )
         ]
 
@@ -77,7 +76,7 @@ class WorkspaceAuthMiddleware(
 
         backend = WorkspaceAuthBackend(
             client_id="your-client-id.apps.googleusercontent.com",
-            workspace_domain="example.com",
+            required_domains=["example.com"],
         )
 
         app.add_middleware(AuthenticationMiddleware, backend=backend)
@@ -86,8 +85,9 @@ class WorkspaceAuthMiddleware(
     Args:
         app: The ASGI application to wrap
         client_id: Google OAuth2 client ID
-        workspace_domain: Expected Google Workspace domain
-        required_domain: If True, only allow users from workspace_domain
+        required_domains: Optional list of allowed Google Workspace domains (e.g., ["example.com", "partner.com"]).
+                         If specified, only users from these domains will be allowed.
+                         If None, users from any domain are allowed.
         fetch_groups: If True, fetch user's group memberships
         credentials: Google credentials for Admin SDK. If None, uses default credentials
         delegated_admin: Admin email for domain-wide delegation (for group fetching)
@@ -98,8 +98,7 @@ class WorkspaceAuthMiddleware(
         self,
         app: typing.Callable,
         client_id: str,
-        workspace_domain: typing.Optional[str] = None,
-        required_domain: bool = True,
+        required_domains: typing.Optional[typing.List[str]] = None,
         fetch_groups: bool = True,
         credentials: typing.Optional[google.auth.credentials.Credentials] = None,
         delegated_admin: typing.Optional[str] = None,
@@ -116,8 +115,7 @@ class WorkspaceAuthMiddleware(
         # Create the backend
         backend = WorkspaceAuthBackend(
             client_id=client_id,
-            workspace_domain=workspace_domain,
-            required_domain=required_domain,
+            required_domains=required_domains,
             fetch_groups=fetch_groups,
             credentials=credentials,
             delegated_admin=delegated_admin,
