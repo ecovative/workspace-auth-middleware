@@ -1,6 +1,6 @@
 [project]
 name = "workspace-auth-middleware"
-version = "0.1.0"
+version = "1.1.2a0"
 description = "ASGI middlware for authentication against Google Workspace"
 authors = [
     {name = "Neale Petrillo",email = "neale@ecovative.com"}
@@ -19,6 +19,11 @@ dependencies = [
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[[tool.poetry.source]]
+name = "data-systems-artifact-repository"
+url = "https://us-east1-python.pkg.dev/eco-info-system/data-systems-artifact-repository/"
+priority = "supplemental"
 
 [tool.poetry.group.dev.dependencies]
 mypy = "^1.18.2"

@@ -1,3 +1,4 @@
+# yamllint disable rule:line-length
 ---
 name: Build Wheel
 
@@ -140,3 +141,36 @@ jobs:
           BRANCH: deployment
           FOLDER: dist
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  deploy_pacakge:
+    needs: build_package
+    runs-on: ubuntu-24.04
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Download Build Artifacts
+        uses: actions/download-artifact@v5
+        with:
+          name: build-artifacts
+          path: dist/
+
+      - name: Authenticate with Google Cloud (${{ matrix.deployment.name }})
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: ${{ secrets[GCP_CREDENTIALS] }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Upload to GCP
+        run: |
+          poetry config http-basic.data-systems-artifact-repository oauth2accesstoken "$(gcloud auth print-access-token)"
+
+          poetry poetry publish -r data-systems-artifact-repository --skip-existing
