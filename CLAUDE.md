@@ -265,13 +265,38 @@ poetry run pre-commit run --all-files
 ```
 
 ### Package Management
+
+**IMPORTANT: Always use Poetry for package management. Never manually edit `pyproject.toml` dependencies.**
+
 ```bash
+# Add a production dependency
+poetry add package-name
+
+# Add a development dependency
+poetry add --group dev package-name
+
+# Add with version constraints
+poetry add "package-name>=1.0.0,<2.0.0"
+poetry add "package-name^1.0.0"  # Caret constraint (recommended)
+
+# After adding packages
+poetry lock      # Update poetry.lock
+poetry install   # Install the package
+
 # Validate Poetry configuration
 poetry check
 
 # Check license compliance (ignores MPL 2.0)
 poetry run licensecheck -0 --ignore-licenses "MPL 2.0"
 ```
+
+**Package Management Rules:**
+- ✅ Use `poetry add` for production dependencies
+- ✅ Use `poetry add --group dev` for development dependencies
+- ✅ Always commit both `pyproject.toml` and `poetry.lock`
+- ❌ Never manually edit `[project] dependencies` or `[tool.poetry.group.dev.dependencies]`
+- ❌ Never use `pip install` directly
+- ❌ Never add packages without using Poetry commands
 
 ## Project Structure
 
