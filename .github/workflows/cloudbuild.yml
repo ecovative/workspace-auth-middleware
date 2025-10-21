@@ -155,6 +155,12 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
+      - name: Install Poetry
+        run: curl -sSL https://install.python-poetry.org | python3 -
+
+      - name: Add Poetry to PATH
+        run: echo "${HOME}/.local/bin" >> $GITHUB_PATH
+
       - name: Download Build Artifacts
         uses: actions/download-artifact@v5
         with:
