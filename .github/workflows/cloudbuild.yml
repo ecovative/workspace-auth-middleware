@@ -164,7 +164,7 @@ jobs:
       - name: Authenticate with Google Cloud (${{ matrix.deployment.name }})
         uses: google-github-actions/auth@v3
         with:
-          credentials_json: ${{ secrets[GCP_CREDENTIALS] }}
+          credentials_json: ${{ secrets["GCP_CREDENTIALS"] }}
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v3
