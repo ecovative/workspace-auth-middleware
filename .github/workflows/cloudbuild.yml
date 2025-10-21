@@ -134,9 +134,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Deploy to Deployment Branch
-        uses: s0/git-publish-subdir-action@2.6.0
+        uses: s0/git-publish-subdir-action@v2.6.0
         env:
           REPO: self
-          BRANCH: Deployment
+          BRANCH: deployment
           FOLDER: dist
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
