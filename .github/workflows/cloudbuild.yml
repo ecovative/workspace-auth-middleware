@@ -160,6 +160,6 @@ jobs:
 
       - name: Upload to GCP
         run: |
+          ls -la
           poetry config http-basic.data-systems-artifact-repository oauth2accesstoken "$(gcloud auth print-access-token)"
-
-          poetry publish -r data-systems-artifact-repository --skip-existing
+          poetry publish -r data-systems-artifact-repository --dist-dir=dist --skip-existing
