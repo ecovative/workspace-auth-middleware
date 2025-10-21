@@ -132,3 +132,11 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Deploy to Deployment Branch
+        uses: s0/git-publish-subdir-action@2.6.0
+        env:
+          REPO: self
+          BRANCH: Deployment
+          FOLDER: dist
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
