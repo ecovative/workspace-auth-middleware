@@ -160,6 +160,8 @@ jobs:
 
       - name: Upload to GCP
         run: |
-          ls -la
+          poetry version $(git describe --tags --long | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)-g[0-9a-f]+$/\1a\2/')
+
           poetry config http-basic.data-systems-artifact-repository oauth2accesstoken "$(gcloud auth print-access-token)"
-          poetry publish -r data-systems-artifact-repository --dist-dir=dist --skip-existing
+
+          poetry publish -r data-systems-artifact-repository --skip-existing
