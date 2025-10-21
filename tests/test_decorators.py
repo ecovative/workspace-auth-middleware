@@ -18,7 +18,7 @@ from workspace_auth_middleware import (
 
 
 @pytest.fixture
-def app_with_decorators(client_id, workspace_domain, mock_google_credentials):
+def app_with_decorators(client_id, required_domains, mock_google_credentials):
     """Create test app with decorated routes."""
 
     @require_auth
@@ -60,7 +60,7 @@ def app_with_decorators(client_id, workspace_domain, mock_google_credentials):
     app.add_middleware(
         WorkspaceAuthMiddleware,
         client_id=client_id,
-        workspace_domain=workspace_domain,
+        required_domains=required_domains,
         credentials=mock_google_credentials,
         delegated_admin="admin@example.com",
         fetch_groups=True,

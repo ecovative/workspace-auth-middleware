@@ -64,14 +64,14 @@ def integration_client_id():
 
 
 @pytest.fixture
-def integration_workspace_domain():
+def integration_required_domains():
     """
-    Get workspace domain from environment for integration tests.
+    Get workspace domains from environment for integration tests.
     """
     domain = os.getenv("GOOGLE_WORKSPACE_DOMAIN")
     if not domain:
         pytest.skip("GOOGLE_WORKSPACE_DOMAIN environment variable not set")
-    return domain
+    return [domain]
 
 
 @pytest.fixture
@@ -96,7 +96,7 @@ class TestADCIntegration:
         )
 
     def test_backend_loads_adc(
-        self, integration_client_id, integration_workspace_domain, adc_available
+        self, integration_client_id, integration_required_domains, adc_available
     ):
         """Test that WorkspaceAuthBackend loads ADC automatically."""
         if not adc_available:
@@ -104,19 +104,19 @@ class TestADCIntegration:
 
         backend = WorkspaceAuthBackend(
             client_id=integration_client_id,
-            workspace_domain=integration_workspace_domain,
+            required_domains=integration_required_domains,
             fetch_groups=True,  # This should trigger ADC loading
         )
 
         # Backend should have loaded credentials
         assert backend.credentials is not None
         assert backend.client_id == integration_client_id
-        assert backend.workspace_domain == integration_workspace_domain
+        assert backend.required_domains == integration_required_domains
 
     def test_backend_with_explicit_adc(
         self,
         integration_client_id,
-        integration_workspace_domain,
+        integration_required_domains,
         integration_admin_email,
         adc_available,
     ):
@@ -132,7 +132,7 @@ class TestADCIntegration:
 
         backend = WorkspaceAuthBackend(
             client_id=integration_client_id,
-            workspace_domain=integration_workspace_domain,
+            required_domains=integration_required_domains,
             credentials=credentials,
             delegated_admin=integration_admin_email,
             fetch_groups=True,
@@ -145,7 +145,7 @@ class TestADCIntegration:
     async def test_group_fetching_with_adc(
         self,
         integration_client_id,
-        integration_workspace_domain,
+        integration_required_domains,
         integration_admin_email,
         adc_available,
     ):
@@ -166,7 +166,7 @@ class TestADCIntegration:
 
         backend = WorkspaceAuthBackend(
             client_id=integration_client_id,
-            workspace_domain=integration_workspace_domain,
+            required_domains=integration_required_domains,
             delegated_admin=integration_admin_email,
             fetch_groups=True,
         )
@@ -200,7 +200,7 @@ class TestMiddlewareWithADC:
     def app_with_adc(
         self,
         integration_client_id,
-        integration_workspace_domain,
+        integration_required_domains,
         integration_admin_email,
         adc_available,
     ):
@@ -225,7 +225,7 @@ class TestMiddlewareWithADC:
         app.add_middleware(
             WorkspaceAuthMiddleware,
             client_id=integration_client_id,
-            workspace_domain=integration_workspace_domain,
+            required_domains=integration_required_domains,
             delegated_admin=integration_admin_email,
             fetch_groups=True,
         )

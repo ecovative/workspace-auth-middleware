@@ -60,7 +60,7 @@ from workspace_auth_middleware import WorkspaceAuthMiddleware
 app.add_middleware(
     WorkspaceAuthMiddleware,
     client_id="...",
-    workspace_domain="example.com",
+    required_domains=["example.com"],
 )
 ```
 
@@ -69,7 +69,7 @@ app.add_middleware(
 from starlette.middleware.authentication import AuthenticationMiddleware
 from workspace_auth_middleware import WorkspaceAuthBackend
 
-backend = WorkspaceAuthBackend(client_id="...", workspace_domain="example.com")
+backend = WorkspaceAuthBackend(client_id="...", required_domains=["example.com"])
 app.add_middleware(AuthenticationMiddleware, backend=backend)
 ```
 

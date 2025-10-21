@@ -21,7 +21,7 @@ logging.basicConfig(
 # Create backend with caching enabled (default)
 backend = WorkspaceAuthBackend(
     client_id="your-client-id.apps.googleusercontent.com",
-    workspace_domain="example.com",
+    required_domains=["example.com"],
     delegated_admin="admin@example.com",
     # Caching options (all optional, these are the defaults)
     enable_token_cache=True,
@@ -82,7 +82,7 @@ async def demo_caching():
 # Disable caching entirely
 backend_no_cache = WorkspaceAuthBackend(
     client_id="your-client-id.apps.googleusercontent.com",
-    workspace_domain="example.com",
+    required_domains=["example.com"],
     enable_token_cache=False,
     enable_group_cache=False,
 )
@@ -90,7 +90,7 @@ backend_no_cache = WorkspaceAuthBackend(
 # Custom cache TTLs
 backend_custom_ttl = WorkspaceAuthBackend(
     client_id="your-client-id.apps.googleusercontent.com",
-    workspace_domain="example.com",
+    required_domains=["example.com"],
     token_cache_ttl=60,  # 1 minute (more aggressive)
     group_cache_ttl=900,  # 15 minutes (less aggressive)
 )
@@ -98,7 +98,7 @@ backend_custom_ttl = WorkspaceAuthBackend(
 # Larger cache sizes for high-traffic applications
 backend_large_cache = WorkspaceAuthBackend(
     client_id="your-client-id.apps.googleusercontent.com",
-    workspace_domain="example.com",
+    required_domains=["example.com"],
     token_cache_maxsize=10000,  # 10k tokens
     group_cache_maxsize=5000,  # 5k users
 )

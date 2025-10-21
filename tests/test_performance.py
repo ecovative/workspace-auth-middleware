@@ -23,7 +23,7 @@ from workspace_auth_middleware import (
 
 
 @pytest.fixture
-def benchmark_app(client_id, workspace_domain):
+def benchmark_app(client_id, required_domains):
     """Create a test app for benchmarking."""
 
     async def endpoint(request):
@@ -48,7 +48,7 @@ def benchmark_app(client_id, workspace_domain):
     app.add_middleware(
         WorkspaceAuthMiddleware,
         client_id=client_id,
-        workspace_domain=workspace_domain,
+        required_domains=required_domains,
         fetch_groups=False,  # Disable for baseline performance
     )
 
@@ -56,7 +56,7 @@ def benchmark_app(client_id, workspace_domain):
 
 
 @pytest.fixture
-def benchmark_app_with_groups(client_id, workspace_domain, mock_google_credentials):
+def benchmark_app_with_groups(client_id, required_domains, mock_google_credentials):
     """Create a test app with group fetching enabled."""
 
     async def endpoint(request):
@@ -73,7 +73,7 @@ def benchmark_app_with_groups(client_id, workspace_domain, mock_google_credentia
     app.add_middleware(
         WorkspaceAuthMiddleware,
         client_id=client_id,
-        workspace_domain=workspace_domain,
+        required_domains=required_domains,
         credentials=mock_google_credentials,
         delegated_admin="admin@example.com",
         fetch_groups=True,
@@ -186,7 +186,7 @@ class TestAuthenticationPerformance:
 class TestBackendPerformance:
     """Performance tests for the authentication backend."""
 
-    def test_backend_initialization(self, benchmark, client_id, workspace_domain):
+    def test_backend_initialization(self, benchmark, client_id, required_domains):
         """
         Benchmark backend initialization time.
 
@@ -196,7 +196,7 @@ class TestBackendPerformance:
         def create_backend():
             return WorkspaceAuthBackend(
                 client_id=client_id,
-                workspace_domain=workspace_domain,
+                required_domains=required_domains,
                 fetch_groups=False,
             )
 
@@ -269,7 +269,7 @@ class TestConcurrentPerformance:
 class TestMemoryUsage:
     """Memory usage tests."""
 
-    def test_backend_memory_footprint(self, client_id, workspace_domain):
+    def test_backend_memory_footprint(self, client_id, required_domains):
         """
         Test memory footprint of backend initialization.
 
@@ -280,7 +280,7 @@ class TestMemoryUsage:
         # Measure memory before
         backend = WorkspaceAuthBackend(
             client_id=client_id,
-            workspace_domain=workspace_domain,
+            required_domains=required_domains,
             fetch_groups=False,
         )
 
@@ -384,7 +384,7 @@ class TestComparisonBenchmarks:
         mock_verify,
         benchmark,
         client_id,
-        workspace_domain,
+        required_domains,
         valid_id_token_claims,
         mock_id_token,
     ):
@@ -405,7 +405,7 @@ class TestComparisonBenchmarks:
         app_no_groups.add_middleware(
             WorkspaceAuthMiddleware,
             client_id=client_id,
-            workspace_domain=workspace_domain,
+            required_domains=required_domains,
             fetch_groups=False,
         )
 

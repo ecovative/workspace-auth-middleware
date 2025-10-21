@@ -16,28 +16,28 @@ class TestWorkspaceAuthBackend:
     """Tests for the WorkspaceAuthBackend class."""
 
     async def test_init_with_explicit_credentials(
-        self, client_id, workspace_domain, mock_google_credentials, delegated_admin
+        self, client_id, required_domains, mock_google_credentials, delegated_admin
     ):
         """Test backend initialization with explicit credentials."""
         backend = WorkspaceAuthBackend(
             client_id=client_id,
-            workspace_domain=workspace_domain,
+            required_domains=required_domains,
             credentials=mock_google_credentials,
             delegated_admin=delegated_admin,
         )
 
         assert backend.client_id == client_id
-        assert backend.workspace_domain == workspace_domain
+        assert backend.required_domains == required_domains
         assert backend.credentials == mock_google_credentials
         assert backend.delegated_admin == delegated_admin
 
     async def test_init_without_credentials_fetch_groups_disabled(
-        self, client_id, workspace_domain
+        self, client_id, required_domains
     ):
         """Test that no credentials are loaded when fetch_groups is False."""
         backend = WorkspaceAuthBackend(
             client_id=client_id,
-            workspace_domain=workspace_domain,
+            required_domains=required_domains,
             fetch_groups=False,
         )
 
@@ -45,7 +45,7 @@ class TestWorkspaceAuthBackend:
 
     @patch("google.auth.default")
     async def test_init_with_default_credentials(
-        self, mock_default, client_id, workspace_domain, mock_google_credentials
+        self, mock_default, client_id, required_domains, mock_google_credentials
     ):
         """Test that default application credentials are loaded automatically."""
         # Mock google.auth.default() to return test credentials
@@ -53,7 +53,7 @@ class TestWorkspaceAuthBackend:
 
         backend = WorkspaceAuthBackend(
             client_id=client_id,
-            workspace_domain=workspace_domain,
+            required_domains=required_domains,
             fetch_groups=True,  # This should trigger ADC loading
         )
 
@@ -65,7 +65,7 @@ class TestWorkspaceAuthBackend:
 
     @patch("google.auth.default")
     async def test_init_with_default_credentials_not_available(
-        self, mock_default, client_id, workspace_domain
+        self, mock_default, client_id, required_domains
     ):
         """Test graceful handling when default credentials are not available."""
         # Mock google.auth.default() to raise an exception
@@ -73,7 +73,7 @@ class TestWorkspaceAuthBackend:
 
         backend = WorkspaceAuthBackend(
             client_id=client_id,
-            workspace_domain=workspace_domain,
+            required_domains=required_domains,
             fetch_groups=True,
         )
 
@@ -107,7 +107,7 @@ class TestWorkspaceAuthBackend:
         self,
         mock_verify,
         client_id,
-        workspace_domain,
+        required_domains,
         valid_id_token_claims,
         mock_id_token,
     ):
@@ -116,7 +116,7 @@ class TestWorkspaceAuthBackend:
 
         backend = WorkspaceAuthBackend(
             client_id=client_id,
-            workspace_domain=workspace_domain,
+            required_domains=required_domains,
             fetch_groups=False,
         )
 
@@ -147,15 +147,14 @@ class TestWorkspaceAuthBackend:
 
         backend = WorkspaceAuthBackend(
             client_id=client_id,
-            workspace_domain="otherdomain.com",  # Different domain
-            required_domain=True,
+            required_domains=["otherdomain.com"],  # Different domain
             fetch_groups=False,
         )
 
         conn = Mock(spec=HTTPConnection)
         conn.headers = {"authorization": f"Bearer {mock_id_token}"}
 
-        with pytest.raises(AuthenticationError, match="not from required domain"):
+        with pytest.raises(AuthenticationError, match="not in allowed domains"):
             await backend.authenticate(conn)
 
     @patch("google.oauth2.id_token.verify_oauth2_token")
@@ -165,7 +164,7 @@ class TestWorkspaceAuthBackend:
         mock_fetch_groups,
         mock_verify,
         client_id,
-        workspace_domain,
+        required_domains,
         valid_id_token_claims,
         mock_id_token,
         sample_groups,
@@ -176,7 +175,7 @@ class TestWorkspaceAuthBackend:
 
         backend = WorkspaceAuthBackend(
             client_id=client_id,
-            workspace_domain=workspace_domain,
+            required_domains=required_domains,
             fetch_groups=True,
         )
 

@@ -13,7 +13,7 @@ from workspace_auth_middleware import WorkspaceAuthMiddleware
 
 
 @pytest.fixture
-def test_app(client_id, workspace_domain):
+def test_app(client_id, required_domains):
     """
     Create a test Starlette application with authentication middleware.
     """
@@ -51,7 +51,7 @@ def test_app(client_id, workspace_domain):
     app.add_middleware(
         WorkspaceAuthMiddleware,
         client_id=client_id,
-        workspace_domain=workspace_domain,
+        required_domains=required_domains,
         fetch_groups=False,  # Disable for simpler tests
     )
 
@@ -127,7 +127,7 @@ class TestMiddlewareWithGroups:
     """Tests for middleware with group fetching enabled."""
 
     @pytest.fixture
-    def app_with_groups(self, client_id, workspace_domain, mock_google_credentials):
+    def app_with_groups(self, client_id, required_domains, mock_google_credentials):
         """Create app with group fetching enabled."""
 
         async def groups_endpoint(request):
@@ -146,7 +146,7 @@ class TestMiddlewareWithGroups:
         app.add_middleware(
             WorkspaceAuthMiddleware,
             client_id=client_id,
-            workspace_domain=workspace_domain,
+            required_domains=required_domains,
             credentials=mock_google_credentials,
             delegated_admin="admin@example.com",
             fetch_groups=True,
@@ -191,7 +191,7 @@ class TestCustomErrorHandler:
     """Tests for custom error handlers."""
 
     @pytest.fixture
-    def app_with_custom_error_handler(self, client_id, workspace_domain):
+    def app_with_custom_error_handler(self, client_id, required_domains):
         """Create app with custom error handler."""
 
         def custom_error_handler(conn, exc):
@@ -211,7 +211,7 @@ class TestCustomErrorHandler:
         app.add_middleware(
             WorkspaceAuthMiddleware,
             client_id=client_id,
-            workspace_domain=workspace_domain,
+            required_domains=required_domains,
             fetch_groups=False,
             on_error=custom_error_handler,
         )
