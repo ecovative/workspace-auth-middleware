@@ -23,6 +23,68 @@ __all__ = [
 ]
 
 
+def _authenticate_from_session(
+    conn: starlette.requests.HTTPConnection,
+    required_domains: typing.Optional[typing.List[str]] = None,
+) -> typing.Optional[
+    typing.Tuple[starlette.authentication.AuthCredentials, WorkspaceUser]
+]:
+    """
+    Authenticate user from Starlette session data.
+
+    This function reads user data from request.session["user"] (populated by
+    OAuth2 login flow) and creates a WorkspaceUser object.
+
+    Args:
+        conn: The HTTP connection (Request or WebSocket)
+        required_domains: Optional list of allowed domains
+
+    Returns:
+        Tuple of (AuthCredentials, WorkspaceUser) if authenticated, None otherwise
+    """
+    try:
+        user_data = conn.session.get("user")
+    except (AssertionError, AttributeError, RuntimeError):
+        # SessionMiddleware not installed
+        return None
+
+    if not isinstance(user_data, dict):
+        return None
+
+    # Extract required fields
+    email = user_data.get("email")
+    user_id = user_data.get("user_id")
+
+    if not email or not user_id:
+        return None
+
+    # Validate domain if required
+    if required_domains:
+        domain = email.split("@")[-1]
+        if domain not in required_domains:
+            return None
+
+    # Extract groups (ensure it's a list)
+    groups = user_data.get("groups", [])
+    if not isinstance(groups, list):
+        groups = []
+
+    # Create user
+    user = WorkspaceUser(
+        email=email,
+        user_id=user_id,
+        name=user_data.get("name", email),
+        domain=user_data.get("domain", email.split("@")[-1]),
+        groups=groups,
+    )
+
+    # Create scopes
+    scopes = ["authenticated"]
+    scopes.extend([f"group:{group}" for group in groups])
+
+    return starlette.authentication.AuthCredentials(scopes), user
+
+
 class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
     """
     Authentication backend for Google Workspace users.
@@ -30,11 +92,9 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
     Extends Starlette's AuthenticationBackend to provide Google Workspace-specific
     authentication using Google OAuth2 ID tokens and group-based authorization.
 
-    This backend:
-    1. Validates Google OAuth2 ID tokens from Authorization header
-    2. Extracts user information from the token
-    3. Fetches user's Google Workspace groups (configurable)
-    4. Populates request.user and request.auth via Starlette's middleware
+    This backend supports TWO authentication methods:
+    1. Session-based (via Starlette's SessionMiddleware and request.session)
+    2. Bearer token (Google ID token in Authorization header)
 
     Args:
         client_id: Google OAuth2 client ID for token validation
@@ -45,8 +105,32 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
         credentials: Google credentials for Admin SDK calls. If None, uses default
                     application credentials. Must have appropriate scopes for Admin SDK.
         delegated_admin: Admin email for domain-wide delegation (required for group fetching)
+        enable_session_auth: If True, check request.session for user data (requires SessionMiddleware)
 
-    Example with default application credentials:
+    Example with session authentication:
+        ```python
+        from starlette.middleware import Middleware
+        from starlette.middleware.sessions import SessionMiddleware
+        from starlette.middleware.authentication import AuthenticationMiddleware
+        from workspace_auth_middleware import WorkspaceAuthBackend
+
+        # Add SessionMiddleware FIRST
+        middleware = [
+            Middleware(SessionMiddleware, secret_key="your-secret-key"),
+            Middleware(
+                AuthenticationMiddleware,
+                backend=WorkspaceAuthBackend(
+                    client_id="your-client-id.apps.googleusercontent.com",
+                    required_domains=["example.com"],
+                    enable_session_auth=True,  # Enable session support
+                ),
+            ),
+        ]
+
+        app = Starlette(routes=routes, middleware=middleware)
+        ```
+
+    Example with bearer token only:
         ```python
         from starlette.middleware.authentication import AuthenticationMiddleware
         from workspace_auth_middleware import WorkspaceAuthBackend
@@ -54,27 +138,7 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
         backend = WorkspaceAuthBackend(
             client_id="your-client-id.apps.googleusercontent.com",
             required_domains=["example.com"],
-            delegated_admin="admin@example.com",  # For group fetching
-        )
-
-        app.add_middleware(AuthenticationMiddleware, backend=backend)
-        ```
-
-    Example with explicit service account credentials:
-        ```python
-        from google.oauth2 import service_account
-        from workspace_auth_middleware import WorkspaceAuthBackend
-
-        credentials = service_account.Credentials.from_service_account_file(
-            'service-account-key.json',
-            scopes=['https://www.googleapis.com/auth/admin.directory.group.readonly']
-        )
-
-        backend = WorkspaceAuthBackend(
-            client_id="your-client-id.apps.googleusercontent.com",
-            required_domains=["example.com"],
-            credentials=credentials,
-            delegated_admin="admin@example.com",
+            enable_session_auth=False,  # Disable session support
         )
 
         app.add_middleware(AuthenticationMiddleware, backend=backend)
@@ -94,11 +158,13 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
         enable_group_cache: bool = True,
         group_cache_ttl: int = 300,  # 5 minutes
         group_cache_maxsize: int = 500,
+        enable_session_auth: bool = True,
     ):
         self.client_id = client_id
         self.required_domains = required_domains
         self.fetch_groups = fetch_groups
         self.delegated_admin = delegated_admin
+        self.enable_session_auth = enable_session_auth
 
         # Cache configuration
         self.enable_token_cache = enable_token_cache
@@ -154,9 +220,12 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
         typing.Tuple[starlette.authentication.AuthCredentials, WorkspaceUser]
     ]:
         """
-        Authenticate a request based on the Authorization header.
+        Authenticate a request based on Starlette session or Authorization header.
 
         This method is called by Starlette's AuthenticationMiddleware for each request.
+        It supports two authentication methods (in priority order):
+        1. Session data from request.session (populated via OAuth2 authorization code flow)
+        2. Bearer token (Google ID token) in Authorization header
 
         Args:
             conn: Starlette HTTPConnection object (Request or WebSocket)
@@ -168,10 +237,21 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
         Raises:
             AuthenticationError: If authentication credentials are invalid
 
-        Expected header format:
-            Authorization: Bearer <google_id_token>
+        Expected formats:
+            - Session: request.session["user"] = {"email": ..., "user_id": ..., ...}
+            - Authorization: Bearer <google_id_token>
         """
-        # Check for Authorization header
+        # Try session authentication first (if enabled)
+        if self.enable_session_auth:
+            try:
+                session_result = _authenticate_from_session(conn, self.required_domains)
+                if session_result is not None:
+                    return session_result
+            except (AssertionError, AttributeError, RuntimeError):
+                # SessionMiddleware not installed - skip session auth
+                pass
+
+        # Fall back to bearer token authentication
         if "authorization" not in conn.headers:
             # No authentication provided - return None for anonymous user
             return None

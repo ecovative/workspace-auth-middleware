@@ -15,6 +15,16 @@ Built on top of [Starlette's authentication system](https://www.starlette.io/aut
 - **Async First**: Built for async Python applications
 - **Framework Agnostic**: Works with FastAPI, Starlette, and any ASGI framework
 
+## Documentation
+
+Looking for detailed integration guides? Check out:
+- **[FastAPI Integration Guide](./docs/FASTAPI_INTEGRATION.md)** - Complete FastAPI integration with examples
+- **[Starlette Integration Guide](./docs/STARLETTE_INTEGRATION.md)** - Complete Starlette integration with examples
+- **[Architecture Documentation](./docs/ARCHITECTURE.md)** - Understand how the middleware works internally
+- **[Session Authentication Guide](./docs/SESSION_AUTHENTICATION.md)** - OAuth2 login flow for web applications
+
+[Full documentation index](#documentation)
+
 ## Installation
 
 ```bash
@@ -138,7 +148,116 @@ routes = [
 app = Starlette(routes=routes, middleware=middleware)
 ```
 
+## OAuth2 Integration with Authlib (Recommended)
+
+For production web applications that need full OAuth2 authorization code flow (login pages, callback handling), we **strongly recommend** using [Authlib](https://docs.authlib.org/) for OAuth2/OIDC implementation, with WorkspaceAuthMiddleware handling Google Workspace-specific features (groups, authorization).
+
+This separation of concerns provides:
+- **Industry-standard OAuth2** via Authlib (PKCE, token refresh, error handling)
+- **Google Workspace features** via WorkspaceAuthMiddleware (group-based RBAC)
+- **Best practices** for session management and security
+
+### FastAPI + Authlib Example
+
+```python
+from fastapi import FastAPI, Request, Depends
+from fastapi.responses import RedirectResponse
+from starlette.middleware import Middleware
+from starlette.middleware.sessions import SessionMiddleware
+from starlette.middleware.authentication import AuthenticationMiddleware
+from authlib.integrations.starlette_client import OAuth
+
+from workspace_auth_middleware import (
+    WorkspaceAuthBackend,
+    require_auth,
+    require_group,
+    WorkspaceUser,
+)
+
+# Initialize Authlib OAuth
+oauth = OAuth()
+oauth.register(
+    name='google',
+    client_id='your-client-id.apps.googleusercontent.com',
+    client_secret='your-client-secret',
+    server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
+    client_kwargs={'scope': 'openid email profile'},
+)
+
+# Create FastAPI app with middleware
+app = FastAPI(
+    middleware=[
+        # SessionMiddleware MUST come FIRST
+        Middleware(SessionMiddleware, secret_key='your-secret-key', max_age=86400),
+        # AuthenticationMiddleware with WorkspaceAuthBackend
+        Middleware(
+            AuthenticationMiddleware,
+            backend=WorkspaceAuthBackend(
+                client_id='your-client-id.apps.googleusercontent.com',
+                required_domains=['example.com'],
+                fetch_groups=True,
+                enable_session_auth=True,  # Enable session support
+            ),
+        ),
+    ],
+)
+
+# OAuth flow with Authlib
+@app.get("/login")
+async def login(request: Request):
+    redirect_uri = request.url_for('auth_callback')
+    return await oauth.google.authorize_redirect(request, redirect_uri)
+
+@app.get("/auth/callback")
+async def auth_callback(request: Request):
+    token = await oauth.google.authorize_access_token(request)
+    user_info = token.get('userinfo')
+
+    # Store in session for WorkspaceAuthMiddleware
+    request.session['user'] = {
+        'email': user_info['email'],
+        'user_id': user_info['sub'],
+        'name': user_info.get('name'),
+        'domain': user_info['email'].split('@')[-1],
+        'groups': [],  # WorkspaceAuthMiddleware will fetch groups
+    }
+    return RedirectResponse(url='/')
+
+@app.get("/logout")
+async def logout(request: Request):
+    request.session.clear()
+    return RedirectResponse(url='/')
+
+# Protected routes using WorkspaceAuthMiddleware decorators
+@app.get("/profile")
+@require_auth
+async def profile(request: Request):
+    return {
+        "email": request.user.email,
+        "groups": request.user.groups,
+    }
+
+@app.get("/admin")
+@require_group('admins@example.com')
+async def admin_only(request: Request):
+    return {"message": "Admin access granted"}
+```
+
+**Complete examples:**
+- [examples/authlib_fastapi_example.py](./examples/authlib_fastapi_example.py) - Full FastAPI + Authlib integration
+- [examples/authlib_starlette_example.py](./examples/authlib_starlette_example.py) - Full Starlette + Authlib integration
+
+**Key points:**
+1. **Authlib** handles OAuth2 (login redirect, token exchange, session storage)
+2. **SessionMiddleware** manages signed cookie sessions
+3. **WorkspaceAuthMiddleware** reads session and adds Google Workspace groups
+4. Middleware order matters: SessionMiddleware → AuthenticationMiddleware
+
+See [SESSION_AUTHENTICATION.md](./docs/SESSION_AUTHENTICATION.md) for detailed documentation.
+
 ## Authentication Flow
+
+### Bearer Token Flow (APIs)
 
 1. Client sends request with `Authorization: Bearer <google_id_token>` header
 2. Middleware extracts and validates the Google ID token
@@ -146,6 +265,16 @@ app = Starlette(routes=routes, middleware=middleware)
 4. User's Google Workspace groups are fetched (optional)
 5. `request.user` and `request.auth` are populated
 6. Request continues to route handler
+
+### Session Flow (Web Applications)
+
+1. User accesses `/login` endpoint
+2. Application redirects to Google OAuth2 authorization
+3. User authenticates with Google
+4. Google redirects back to `/auth/callback` with authorization code
+5. Application exchanges code for tokens and stores user in session
+6. WorkspaceAuthMiddleware reads session and fetches groups
+7. Subsequent requests use session cookie (no token needed)
 
 ### Getting Google ID Tokens
 
@@ -644,10 +773,22 @@ See LICENSE.txt
 
 ## Documentation
 
-- **[README.md](./README.md)** - This file, complete package documentation
-- **[TESTING_GUIDE.md](./TESTING_GUIDE.md)** - Complete guide for testing with real Google credentials
-- **[CLAUDE.md](./CLAUDE.md)** - Architecture and development guide for Claude Code
-- **[examples/README.md](./examples/README.md)** - Examples and setup instructions
+### Getting Started
+- **[README.md](./README.md)** - This file, complete package documentation and quick start
+- **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)** - Architecture overview and code structure
+- **[docs/FASTAPI_INTEGRATION.md](./docs/FASTAPI_INTEGRATION.md)** - Complete FastAPI integration guide
+- **[docs/STARLETTE_INTEGRATION.md](./docs/STARLETTE_INTEGRATION.md)** - Complete Starlette integration guide
+- **[docs/SESSION_AUTHENTICATION.md](./docs/SESSION_AUTHENTICATION.md)** - Session-based authentication with OAuth2
+
+### Testing and Development
+- **[docs/TESTING_GUIDE.md](./docs/TESTING_GUIDE.md)** - Complete guide for testing with real Google credentials
+- **[CLAUDE.md](./CLAUDE.md)** - Development guide for contributors (Claude Code instructions)
+
+### Examples
+- **[examples/README.md](./examples/README.md)** - Examples overview and setup instructions
+- **[examples/authlib_fastapi_example.py](./examples/authlib_fastapi_example.py)** - Production-ready FastAPI + Authlib + OAuth2
+- **[examples/authlib_starlette_example.py](./examples/authlib_starlette_example.py)** - Production-ready Starlette + Authlib + OAuth2
+- **[examples/starlette_session_example.py](./examples/starlette_session_example.py)** - Starlette with session authentication
 - **[examples/caching_example.py](./examples/caching_example.py)** - Caching configuration examples
 - **[examples/manual_testing.py](./examples/manual_testing.py)** - Interactive test server
 

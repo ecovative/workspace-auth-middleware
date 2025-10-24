@@ -2,9 +2,73 @@
 
 This directory contains examples demonstrating how to use workspace-auth-middleware in various scenarios.
 
+## Quick Start Guide
+
+**Choose the right example for your use case:**
+
+| Example | Best For | Authentication Method |
+|---------|----------|----------------------|
+| `authlib_fastapi_example.py` | **Production web applications** | Session cookies (OAuth2 flow) |
+| `authlib_starlette_example.py` | **Lightweight web apps** | Session cookies (OAuth2 flow) |
+| `manual_testing.py` | **Testing/debugging**, APIs | Bearer tokens (ID tokens) |
+| `caching_example.py` | **Performance tuning** | Either method |
+
+**For production web applications**, we **strongly recommend** the Authlib examples (#1 or #2). They provide:
+- Industry-standard OAuth2 implementation
+- Better security (PKCE, automatic state management)
+- Session-based authentication (better UX for web apps)
+- Easy integration with Google Workspace groups
+
 ## Available Examples
 
-### 1. `caching_example.py` - Performance Caching
+### 1. `authlib_fastapi_example.py` - Production-Ready OAuth2 with FastAPI (RECOMMENDED)
+
+Complete production-ready example using Authlib + WorkspaceAuthMiddleware for OAuth2 authentication with Google Workspace.
+
+**Features:**
+- ✅ Industry-standard OAuth2 via Authlib
+- ✅ Session-based authentication with SessionMiddleware
+- ✅ Google Workspace group-based authorization
+- ✅ Automatic API documentation (Swagger/ReDoc)
+- ✅ PKCE security enabled by default
+- ✅ Type-safe with FastAPI dependencies
+
+**Run it:**
+```bash
+# 1. Set environment variables
+export GOOGLE_CLIENT_ID="your-client-id.apps.googleusercontent.com"
+export GOOGLE_CLIENT_SECRET="your-client-secret"
+export SESSION_SECRET_KEY="your-secret-key"
+export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account.json"  # Optional, for groups
+export GOOGLE_DELEGATED_ADMIN="admin@example.com"  # Optional, for groups
+export GOOGLE_WORKSPACE_DOMAIN="example.com"  # Optional
+
+# 2. Install Authlib
+poetry add authlib
+
+# 3. Run the example
+poetry run python examples/authlib_fastapi_example.py
+
+# 4. Visit http://localhost:8000/ in your browser
+```
+
+**What you'll see:**
+- Login page with Google OAuth2
+- Protected routes requiring authentication
+- Admin-only routes requiring group membership
+- Interactive Swagger UI at `/docs`
+
+### 2. `authlib_starlette_example.py` - Production-Ready OAuth2 with Starlette
+
+Same features as the FastAPI example, but using pure Starlette for lightweight applications.
+
+**Run it:**
+```bash
+poetry run python examples/authlib_starlette_example.py
+# Visit http://localhost:8000/
+```
+
+### 3. `caching_example.py` - Performance Caching
 
 Demonstrates how to:
 - Enable/disable caching
@@ -17,7 +81,7 @@ Demonstrates how to:
 poetry run python examples/caching_example.py
 ```
 
-### 2. `manual_testing.py` - Test with Real Google Credentials
+### 4. `manual_testing.py` - Test with Real Google Credentials (Bearer Token Auth)
 
 A complete FastAPI server for manual testing with real Google OAuth2 tokens.
 

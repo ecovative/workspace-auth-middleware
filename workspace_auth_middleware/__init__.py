@@ -6,6 +6,9 @@ This package provides authentication and authorization for ASGI applications
 
 Built on top of Starlette's authentication system with Google Workspace-specific
 features including group-based role-based access control (RBAC).
+
+For OAuth2 authorization code flow (web applications), we recommend using Authlib:
+https://docs.authlib.org/en/latest/client/starlette.html
 """
 
 # Core components

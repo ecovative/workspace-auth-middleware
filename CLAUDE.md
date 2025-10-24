@@ -313,14 +313,23 @@ poetry run licensecheck -0 --ignore-licenses "MPL 2.0"
   - `test_integration_adc.py` - Integration tests with real Google credentials
   - `test_performance.py` - Performance benchmarking tests
   - `conftest.py` - Shared pytest fixtures
+- `docs/` - Comprehensive documentation
+  - `ARCHITECTURE.md` - Architecture overview and code structure
+  - `FASTAPI_INTEGRATION.md` - Complete FastAPI integration guide
+  - `STARLETTE_INTEGRATION.md` - Complete Starlette integration guide
+  - `SESSION_AUTHENTICATION.md` - Session-based authentication guide
+  - `TESTING_GUIDE.md` - Complete guide for testing with real credentials
+  - `STARLETTE_SESSION_IMPLEMENTATION.md` - Technical implementation details for session auth
 - `examples/` - Example applications and testing tools
   - `manual_testing.py` - FastAPI test server for real credential testing
+  - `authlib_fastapi_example.py` - Production-ready FastAPI + Authlib example
+  - `authlib_starlette_example.py` - Production-ready Starlette + Authlib example
+  - `starlette_session_example.py` - Starlette with session authentication
   - `caching_example.py` - Caching configuration examples
   - `setup_env.sh` - Interactive environment configuration wizard
   - `README.md` - Examples documentation
 - `pyproject.toml` - Project configuration and dependencies
 - `pytest.ini` - Pytest configuration including benchmark settings
-- `TESTING_GUIDE.md` - Complete guide for testing with real credentials
 - `check_credentials.sh` - Credential verification script
 - `run_integration_tests.sh` - Integration test runner
 
@@ -405,11 +414,73 @@ export TEST_USER_EMAIL="testuser@example.com"
 ./run_integration_tests.sh TestADCIntegration::test_group_fetching_with_adc
 ```
 
-See `TESTING_GUIDE.md` for complete documentation including:
+See `docs/TESTING_GUIDE.md` for complete documentation including:
 - Getting Google ID tokens (3 different methods)
 - Service account setup
 - Troubleshooting common issues
 - Testing scenarios
+
+## Documentation Structure
+
+The project has comprehensive documentation organized in the `docs/` folder:
+
+### User-Facing Documentation
+
+1. **[README.md](./README.md)** - Main documentation with quick start and overview
+2. **[docs/FASTAPI_INTEGRATION.md](./docs/FASTAPI_INTEGRATION.md)** - Complete FastAPI integration guide
+   - Prerequisites and installation
+   - Configuration options
+   - Integration methods
+   - Route protection with decorators and dependencies
+   - Session-based authentication
+   - Error handling and OpenAPI integration
+   - Complete working examples
+   - Best practices and troubleshooting
+3. **[docs/STARLETTE_INTEGRATION.md](./docs/STARLETTE_INTEGRATION.md)** - Complete Starlette integration guide
+   - Prerequisites and installation
+   - Configuration options
+   - Integration methods
+   - Route protection with decorators
+   - Session-based authentication
+   - Error handling
+   - Complete working examples
+   - Best practices and troubleshooting
+4. **[docs/SESSION_AUTHENTICATION.md](./docs/SESSION_AUTHENTICATION.md)** - Session-based authentication guide
+   - OAuth2 authorization code flow
+   - Authlib integration examples
+   - Session middleware configuration
+5. **[docs/TESTING_GUIDE.md](./docs/TESTING_GUIDE.md)** - Testing with real Google credentials
+   - Getting Google ID tokens
+   - Service account setup
+   - Integration tests
+   - Troubleshooting
+
+### Developer Documentation
+
+1. **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)** - Architecture overview and code structure
+   - Component architecture with diagrams
+   - Authentication flow details
+   - Design principles
+   - Module reference
+   - Performance considerations
+   - Extension points
+2. **[CLAUDE.md](./CLAUDE.md)** - This file, development guide for contributors
+   - Project overview and architecture
+   - Development environment setup
+   - Common commands (testing, code quality, package management)
+   - Project structure
+   - Key dependencies
+   - Testing with real credentials
+3. **[docs/STARLETTE_SESSION_IMPLEMENTATION.md](./docs/STARLETTE_SESSION_IMPLEMENTATION.md)** - Technical implementation details
+   - Session-based authentication internals
+
+### When Creating New Documentation
+
+- **User guides** (integration, how-to) → Place in `docs/` folder with descriptive names
+- **Examples** → Place in `examples/` folder with accompanying README
+- **API reference** → Consider adding to docstrings in code, they're comprehensive
+- **Architecture/design docs** → Place in `docs/` folder
+- All documentation should be in Markdown format for GitHub rendering
 
 ## Reference Documentation
 
