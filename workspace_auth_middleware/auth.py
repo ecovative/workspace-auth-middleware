@@ -67,23 +67,31 @@ def _authenticate_from_session(
     logger.debug(f"Session data found - email: {email}, user_id: {user_id}")
 
     if not email or not user_id:
-        logger.warning(f"Session missing required fields - email: {bool(email)}, user_id: {bool(user_id)}")
+        logger.warning(
+            f"Session missing required fields - email: {bool(email)}, user_id: {bool(user_id)}"
+        )
         return None
 
     # Validate domain if required
     if required_domains:
         domain = email.split("@")[-1]
         if domain not in required_domains:
-            logger.warning(f"Domain '{domain}' not in required domains: {required_domains}")
+            logger.warning(
+                f"Domain '{domain}' not in required domains: {required_domains}"
+            )
             return None
 
     # Extract groups (ensure it's a list)
     groups = user_data.get("groups", [])
     if not isinstance(groups, list):
-        logger.warning(f"Session groups is not a list: {type(groups)}, converting to empty list")
+        logger.warning(
+            f"Session groups is not a list: {type(groups)}, converting to empty list"
+        )
         groups = []
 
-    logger.info(f"Session auth successful for {email} with {len(groups)} groups: {groups}")
+    logger.info(
+        f"Session auth successful for {email} with {len(groups)} groups: {groups}"
+    )
 
     # Create user
     user = WorkspaceUser(
@@ -230,27 +238,29 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
         elif fetch_groups:
             # Only load default credentials if group fetching is enabled
             try:
-                logger.info("Attempting to load default application credentials for group fetching")
+                logger.info(
+                    "Attempting to load default application credentials for group fetching"
+                )
                 tmp_credentials, project = google.auth.default()
 
                 request = google.auth.transport.requests.Request()
                 tmp_credentials.refresh(request)
-                signer = google.auth.iam.Signer(request, tmp_credentials, tmp_credentials.service_account_email)
-
-                credentials = google.oauth2.service_account.Credentials(
-                    signer,
-                    tmp_credentials.service_account_email,
-                    scopes = [
+                self.credentials = google.oauth2.service_account.Credentials.from_service_account_info(
+                    tmp_credentials,
+                    scopes=[
                         "https://www.googleapis.com/auth/admin.directory.group.readonly",
                         "https://www.googleapis.com/auth/admin.directory.group.member.readonly",
                     ],
-                     subject = delegated_admin,
                 )
-                logger.info(f"Successfully loaded default credentials for project: {project}")
+                logger.info(
+                    f"Successfully loaded default credentials for project: {project}"
+                )
             except Exception as e:
                 # If default credentials aren't available, set to None
                 # Group fetching will be skipped
-                logger.warning(f"Failed to load default credentials: {type(e).__name__}: {e}")
+                logger.warning(
+                    f"Failed to load default credentials: {type(e).__name__}: {e}"
+                )
                 logger.warning("Group fetching will be disabled")
                 self.credentials = None
         else:
@@ -292,13 +302,17 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
             try:
                 session_result = _authenticate_from_session(conn, self.required_domains)
                 if session_result is not None:
-                    logger.info(f"Successfully authenticated via session: {session_result[1].email}")
+                    logger.info(
+                        f"Successfully authenticated via session: {session_result[1].email}"
+                    )
                     return session_result
                 else:
                     logger.debug("No valid session data found, will try bearer token")
             except (AssertionError, AttributeError, RuntimeError) as e:
                 # SessionMiddleware not installed - skip session auth
-                logger.debug(f"Session auth failed with {type(e).__name__}, will try bearer token")
+                logger.debug(
+                    f"Session auth failed with {type(e).__name__}, will try bearer token"
+                )
                 pass
         else:
             logger.debug("Session authentication is disabled")
@@ -331,17 +345,23 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
             name = user_info.get("name")
             domain = email.split("@")[-1] if email else None
 
-            logger.debug(f"Token verified - email: {email}, user_id: {user_id}, domain: {domain}")
+            logger.debug(
+                f"Token verified - email: {email}, user_id: {user_id}, domain: {domain}"
+            )
 
             if not email or not user_id:
-                logger.error("Token verification succeeded but missing email or user_id")
+                logger.error(
+                    "Token verification succeeded but missing email or user_id"
+                )
                 raise starlette.authentication.AuthenticationError(
                     "Invalid token: missing email or user ID"
                 )
 
             # Check domain restriction if required
             if self.required_domains and domain not in self.required_domains:
-                logger.warning(f"Domain restriction failed: {domain} not in {self.required_domains}")
+                logger.warning(
+                    f"Domain restriction failed: {domain} not in {self.required_domains}"
+                )
                 raise starlette.authentication.AuthenticationError(
                     f"User domain '{domain}' not in allowed domains: {', '.join(self.required_domains)}"
                 )
@@ -349,7 +369,9 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
             # Fetch user's groups (placeholder - implement with Admin SDK)
             groups = []
             if self.fetch_groups:
-                logger.debug(f"fetch_groups=True, attempting to fetch groups for {email}")
+                logger.debug(
+                    f"fetch_groups=True, attempting to fetch groups for {email}"
+                )
                 groups = await self._fetch_user_groups(email)
                 logger.info(f"Fetched {len(groups)} groups for {email}: {groups}")
             else:
@@ -371,7 +393,9 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
                 # Add group scopes for Starlette's @requires decorator
                 scopes.extend([f"group:{group}" for group in groups])
 
-            logger.info(f"Successfully authenticated {email} with {len(scopes)} scopes: {scopes}")
+            logger.info(
+                f"Successfully authenticated {email} with {len(scopes)} scopes: {scopes}"
+            )
 
             credentials = starlette.authentication.AuthCredentials(scopes=scopes)
 
@@ -426,7 +450,9 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
                 token, request, self.client_id
             )
 
-            logger.debug(f"Token verified successfully - email: {idinfo.get('email')}, sub: {idinfo.get('sub')}")
+            logger.debug(
+                f"Token verified successfully - email: {idinfo.get('email')}, sub: {idinfo.get('sub')}"
+            )
 
             # Additional validation
             if idinfo.get("iss") not in [
@@ -490,25 +516,35 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
 
         # Check if we have credentials
         if self.credentials is None:
-            logger.warning(f"No credentials available for group fetching - returning empty list for {email}")
+            logger.warning(
+                f"No credentials available for group fetching - returning empty list for {email}"
+            )
             return []
 
         try:
             # Prepare credentials with domain-wide delegation if needed
             delegated_credentials = self.credentials
             if self.delegated_admin:
-                logger.debug(f"Using domain-wide delegation with admin: {self.delegated_admin}")
+                logger.debug(
+                    f"Using domain-wide delegation with admin: {self.delegated_admin}"
+                )
                 # Create delegated credentials for domain-wide delegation
                 # This allows the service account to act on behalf of the admin
                 if hasattr(self.credentials, "with_subject"):
                     delegated_credentials = self.credentials.with_subject(
                         self.delegated_admin
                     )
-                    logger.debug(f"Created delegated credentials for {self.delegated_admin}")
+                    logger.debug(
+                        f"Created delegated credentials for {self.delegated_admin}"
+                    )
                 else:
-                    logger.warning(f"Credentials do not support with_subject() - cannot delegate to {self.delegated_admin}")
+                    logger.warning(
+                        f"Credentials do not support with_subject() - cannot delegate to {self.delegated_admin}"
+                    )
             else:
-                logger.warning("No delegated_admin configured - group fetching may fail without domain-wide delegation")
+                logger.warning(
+                    "No delegated_admin configured - group fetching may fail without domain-wide delegation"
+                )
 
             # Run Admin SDK call in executor (it's synchronous)
             logger.debug(f"Calling Admin SDK to fetch groups for {email}")
@@ -517,7 +553,9 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
                 None, self._fetch_groups_sync, delegated_credentials, email
             )
 
-            logger.info(f"Successfully fetched {len(groups)} groups for {email}: {groups}")
+            logger.info(
+                f"Successfully fetched {len(groups)} groups for {email}: {groups}"
+            )
 
             # Cache the result
             if isinstance(self._group_cache, cachetools.TTLCache):
@@ -529,7 +567,10 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
         except Exception as e:
             # On any error, return empty list
             # This ensures authentication doesn't fail if group fetching fails
-            logger.error(f"Failed to fetch groups for {email}: {type(e).__name__}: {e}", exc_info=True)
+            logger.error(
+                f"Failed to fetch groups for {email}: {type(e).__name__}: {e}",
+                exc_info=True,
+            )
             return []
 
     def _fetch_groups_sync(
@@ -563,16 +604,23 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
 
             # Extract group email addresses
             groups = [group["email"] for group in result.get("groups", [])]
-            logger.debug(f"Extracted {len(groups)} group emails from Admin SDK response")
+            logger.debug(
+                f"Extracted {len(groups)} group emails from Admin SDK response"
+            )
             return groups
 
         except ImportError as e:
             logger.error(f"Failed to import googleapiclient: {e}")
-            logger.error("Install google-api-python-client to enable group fetching: pip install google-api-python-client")
+            logger.error(
+                "Install google-api-python-client to enable group fetching: pip install google-api-python-client"
+            )
             return []
         except Exception as e:
             # Return empty list on any error
-            logger.error(f"Admin SDK call failed for {email}: {type(e).__name__}: {e}", exc_info=True)
+            logger.error(
+                f"Admin SDK call failed for {email}: {type(e).__name__}: {e}",
+                exc_info=True,
+            )
             return []
 
     def get_cache_stats(self) -> typing.Dict[str, typing.Any]:
