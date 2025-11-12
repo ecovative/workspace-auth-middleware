@@ -236,34 +236,24 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
             logger.info("Using provided credentials for group fetching")
             self.credentials = credentials
         elif fetch_groups:
-            # Only load default credentials if group fetching is enabled
             try:
-                logger.info(
-                    "Attempting to load default application credentials for group fetching"
-                )
-                tmp_credentials, project = google.auth.default()
-                logger.info("Using %s", tmp_credentials)
-                tmp_credentials.refresh(google.auth.transport.requests.Request())
+                logger.info("Using application default credentials for group fetching")
 
-                self.credentials = google.oauth2.service_account.Credentials.from_service_account_info(
-                    tmp_credentials,
-                    scopes=[
+                credentials, project = google.auth.default()
+                target_credentials = google.oauth2.service_account.IDTokenCredentails(
+                    target_principle = self.delegated_admin,
+                    target_scopes = [
                         "https://www.googleapis.com/auth/admin.directory.group.readonly",
                         "https://www.googleapis.com/auth/admin.directory.group.member.readonly",
                     ],
-                    subject=self.delegated_admin,
+                    target_audience = f'https://iam.googleapis.com/projects/{project}/serviceAccounts/{credentials.service_account_email}'
                 )
-                logger.info(
-                    f"Successfully loaded default credentials for project: {project}"
-                )
+                self.credentials = target_credentials.with_subject(self.delegated_admin)
+
+                logger.info("Credential building complete")
             except Exception as e:
-                # If default credentials aren't available, set to None
-                # Group fetching will be skipped
-                logger.warning(
-                    f"Failed to load default credentials: {type(e).__name__}: {e}"
-                )
-                logger.warning("Group fetching will be disabled")
-                self.credentials = None
+                logger.warning("Error getting credentials: %s", e)
+
         else:
             logger.info("Group fetching disabled - no credentials needed")
             self.credentials = None
@@ -523,30 +513,6 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
             return []
 
         try:
-            # Prepare credentials with domain-wide delegation if needed
-            delegated_credentials = self.credentials
-            if self.delegated_admin:
-                logger.debug(
-                    f"Using domain-wide delegation with admin: {self.delegated_admin}"
-                )
-                # Create delegated credentials for domain-wide delegation
-                # This allows the service account to act on behalf of the admin
-                if hasattr(self.credentials, "with_subject"):
-                    delegated_credentials = self.credentials.with_subject(
-                        self.delegated_admin
-                    )
-                    logger.debug(
-                        f"Created delegated credentials for {self.delegated_admin}"
-                    )
-                else:
-                    logger.warning(
-                        f"Credentials do not support with_subject() - cannot delegate to {self.delegated_admin}"
-                    )
-            else:
-                logger.warning(
-                    "No delegated_admin configured - group fetching may fail without domain-wide delegation"
-                )
-
             # Run Admin SDK call in executor (it's synchronous)
             logger.debug(f"Calling Admin SDK to fetch groups for {email}")
             loop = asyncio.get_event_loop()
