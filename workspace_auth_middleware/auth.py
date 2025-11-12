@@ -242,15 +242,16 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
                     "Attempting to load default application credentials for group fetching"
                 )
                 tmp_credentials, project = google.auth.default()
+                logger.info("Using %s", tmp_credentials)
+                tmp_credentials.refresh(google.auth.transport.requests.Request())
 
-                request = google.auth.transport.requests.Request()
-                tmp_credentials.refresh(request)
                 self.credentials = google.oauth2.service_account.Credentials.from_service_account_info(
                     tmp_credentials,
                     scopes=[
                         "https://www.googleapis.com/auth/admin.directory.group.readonly",
                         "https://www.googleapis.com/auth/admin.directory.group.member.readonly",
                     ],
+                    subject=self.delegated_admin,
                 )
                 logger.info(
                     f"Successfully loaded default credentials for project: {project}"
