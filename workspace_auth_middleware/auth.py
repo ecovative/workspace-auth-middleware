@@ -240,7 +240,7 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
                 logger.info("Using application default credentials for group fetching")
 
                 credentials, project = google.auth.default()
-                target_credentials = google.oauth2.service_account.IDTokenCredentails(
+                target_credentials = google.oauth2.service_account.IDTokenCredentials(
                     target_principle = self.delegated_admin,
                     target_scopes = [
                         "https://www.googleapis.com/auth/admin.directory.group.readonly",
