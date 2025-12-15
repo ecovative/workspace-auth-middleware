@@ -3,8 +3,8 @@ Pytest configuration and fixtures for workspace-auth-middleware tests.
 """
 
 import pytest
+import google.auth.credentials
 from unittest.mock import Mock
-from google.auth import credentials as google_credentials
 
 
 @pytest.fixture
@@ -14,18 +14,11 @@ def mock_google_credentials():
 
     Returns a mock Credentials object that can be used with the backend.
     """
-    creds = Mock(spec=google_credentials.Credentials)
+    creds = Mock(spec=google.auth.credentials.Credentials)
     creds.token = "mock_access_token"
     creds.valid = True
     creds.expired = False
-
-    # Mock the with_subject method for domain-wide delegation
-    delegated_creds = Mock(spec=google_credentials.Credentials)
-    delegated_creds.token = "delegated_token"
-    delegated_creds.valid = True
-    delegated_creds.expired = False
-
-    creds.with_subject = Mock(return_value=delegated_creds)
+    creds.refresh = Mock()
 
     return creds
 
@@ -72,20 +65,22 @@ def sample_groups():
 
 
 @pytest.fixture
-def mock_admin_sdk_service(sample_groups):
+def mock_cloud_identity_service(sample_groups):
     """
-    Mock Google Admin SDK service for testing group fetching.
+    Mock Google Cloud Identity service for testing group fetching.
     """
-    service = Mock()
-    groups_resource = Mock()
-    list_method = Mock()
+    from unittest.mock import MagicMock
 
-    # Mock the groups().list().execute() chain
-    list_method.execute.return_value = {
-        "groups": [{"email": group} for group in sample_groups]
+    service = MagicMock()
+
+    # Mock the groups().memberships().searchTransitiveGroups().execute() chain
+    # Cloud Identity API returns memberships with groupKey containing the id
+    api_response = {
+        "memberships": [{"groupKey": {"id": group}} for group in sample_groups]
     }
-    groups_resource.list.return_value = list_method
-    service.groups.return_value = groups_resource
+
+    # Configure the chain with explicit return values
+    service.groups.return_value.memberships.return_value.searchTransitiveGroups.return_value.execute.return_value = api_response
 
     return service
 
@@ -100,9 +95,3 @@ def client_id():
 def required_domains():
     """Test Google Workspace domains."""
     return ["example.com"]
-
-
-@pytest.fixture
-def delegated_admin():
-    """Test admin email for domain-wide delegation."""
-    return "admin@example.com"

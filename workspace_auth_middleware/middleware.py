@@ -88,9 +88,8 @@ class WorkspaceAuthMiddleware(
         required_domains: Optional list of allowed Google Workspace domains (e.g., ["example.com", "partner.com"]).
                          If specified, only users from these domains will be allowed.
                          If None, users from any domain are allowed.
-        fetch_groups: If True, fetch user's group memberships
-        credentials: Google credentials for Admin SDK. If None, uses default credentials
-        delegated_admin: Admin email for domain-wide delegation (for group fetching)
+        fetch_groups: If True, fetch user's group memberships using Cloud Identity API
+        credentials: Google credentials for Cloud Identity API. If None, uses default credentials
         on_error: Optional custom error handler (Request, AuthenticationError) -> Response
     """
 
@@ -101,7 +100,6 @@ class WorkspaceAuthMiddleware(
         required_domains: typing.Optional[typing.List[str]] = None,
         fetch_groups: bool = True,
         credentials: typing.Optional[google.auth.credentials.Credentials] = None,
-        delegated_admin: typing.Optional[str] = None,
         on_error: typing.Optional[
             typing.Callable[
                 [
@@ -118,7 +116,6 @@ class WorkspaceAuthMiddleware(
             required_domains=required_domains,
             fetch_groups=fetch_groups,
             credentials=credentials,
-            delegated_admin=delegated_admin,
         )
 
         # Use custom error handler or default

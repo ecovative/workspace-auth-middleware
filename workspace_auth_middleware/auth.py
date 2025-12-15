@@ -8,12 +8,12 @@ validating Google OAuth2 ID tokens and extracting Google Workspace group members
 import asyncio
 import logging
 import typing
+import urllib.parse
 
-import google.auth.credentials
 import google.auth
-import google.oauth2.id_token
-import google.oauth2.service_account
+import google.auth.credentials
 import google.auth.transport.requests
+import googleapiclient.discovery  # type: ignore[import-untyped]
 import starlette.authentication
 import starlette.requests
 import cachetools
@@ -21,7 +21,10 @@ import cachetools
 from .models import WorkspaceUser
 
 # Module-level logger - can be reconfigured by parent application
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("workspace_auth_middleware")
+logger.propagate = True
+logger.setLevel(logging.DEBUG)
+logger.handlers = []
 
 __all__ = [
     "WorkspaceAuthBackend",
@@ -125,10 +128,10 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
         required_domains: Optional list of allowed Google Workspace domains (e.g., ["example.com", "partner.com"]).
                          If specified, only users from these domains will be allowed.
                          If None, users from any domain are allowed.
-        fetch_groups: If True, fetch user's group memberships (requires Admin SDK)
-        credentials: Google credentials for Admin SDK calls. If None, uses default
-                    application credentials. Must have appropriate scopes for Admin SDK.
-        delegated_admin: Admin email for domain-wide delegation (required for group fetching)
+        fetch_groups: If True, fetch user's group memberships (requires Cloud Identity Groups API).
+                     The service account must have the Groups Administrator role assigned.
+        credentials: Google credentials for Cloud Identity API calls. If None, uses default
+                    application credentials with cloud-identity.groups scope.
         enable_session_auth: If True, check request.session for user data (requires SessionMiddleware)
 
     Example with session authentication:
@@ -175,7 +178,6 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
         required_domains: typing.Optional[typing.List[str]] = None,
         fetch_groups: bool = True,
         credentials: typing.Optional[google.auth.credentials.Credentials] = None,
-        delegated_admin: typing.Optional[str] = None,
         enable_token_cache: bool = True,
         token_cache_ttl: int = 300,  # 5 minutes
         token_cache_maxsize: int = 1000,
@@ -189,7 +191,6 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
             f"client_id: {client_id[:20]}..., "
             f"required_domains: {required_domains}, "
             f"fetch_groups: {fetch_groups}, "
-            f"delegated_admin: {delegated_admin}, "
             f"enable_session_auth: {enable_session_auth}, "
             f"enable_token_cache: {enable_token_cache}, "
             f"enable_group_cache: {enable_group_cache}"
@@ -198,7 +199,6 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
         self.client_id = client_id
         self.required_domains = required_domains
         self.fetch_groups = fetch_groups
-        self.delegated_admin = delegated_admin
         self.enable_session_auth = enable_session_auth
 
         # Cache configuration
@@ -239,21 +239,18 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
             try:
                 logger.info("Using application default credentials for group fetching")
 
-                credentials, project = google.auth.default()
-                target_credentials = google.oauth2.service_account.IDTokenCredentials(
-                    target_principle = self.delegated_admin,
-                    target_scopes = [
-                        "https://www.googleapis.com/auth/admin.directory.group.readonly",
-                        "https://www.googleapis.com/auth/admin.directory.group.member.readonly",
-                    ],
-                    target_audience = f'https://iam.googleapis.com/projects/{project}/serviceAccounts/{credentials.service_account_email}'
+                request = google.auth.transport.requests.Request()
+                self.credentials, _ = google.auth.default(
+                    scopes=[
+                        "https://www.googleapis.com/auth/cloud-identity.groups.readonly",
+                    ]
                 )
-                self.credentials = target_credentials.with_subject(self.delegated_admin)
+                self.credentials.refresh(request)
 
                 logger.info("Credential building complete")
             except Exception as e:
                 logger.warning("Error getting credentials: %s", e)
-
+                self.credentials = None
         else:
             logger.info("Group fetching disabled - no credentials needed")
             self.credentials = None
@@ -470,23 +467,26 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
 
     async def _fetch_user_groups(self, email: str) -> typing.List[str]:
         """
-        Fetch user's Google Workspace group memberships using the Admin SDK.
+        Fetch user's Google Workspace group memberships using the Cloud Identity Groups API.
 
         Uses caching to avoid repeated API calls for the same user.
-        This significantly improves performance since Admin SDK calls are slow (100-500ms).
+        This significantly improves performance since API calls are slow (100-500ms).
 
-        This method uses the Google Admin SDK Directory API to fetch the list of
+        This method uses the Cloud Identity Groups API to fetch the list of
         groups that a user belongs to. Requires:
-        1. Service account credentials with appropriate scopes
-        2. Domain-wide delegation enabled for the service account
+        1. Service account with Groups Administrator role assigned in Google Workspace
+        2. cloud-identity.groups scope
         3. google-api-python-client package installed
+
+        Note: This approach does NOT require domain-wide delegation. The service account
+        acts as itself with the Groups Administrator role.
 
         Args:
             email: User's email address
 
         Returns:
             List of group email addresses the user belongs to
-            Returns empty list if credentials unavailable or Admin SDK not installed
+            Returns empty list if credentials unavailable or API client not installed
 
         Raises:
             No exceptions raised - errors are logged and empty list returned
@@ -513,11 +513,16 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
             return []
 
         try:
-            # Run Admin SDK call in executor (it's synchronous)
-            logger.debug(f"Calling Admin SDK to fetch groups for {email}")
+            # Run Cloud Identity API call in executor (it's synchronous)
+            logger.debug(
+                f"Calling Cloud Identity Groups API to fetch groups for {email}"
+            )
             loop = asyncio.get_event_loop()
             groups = await loop.run_in_executor(
-                None, self._fetch_groups_sync, delegated_credentials, email
+                None,
+                self._fetch_groups_sync,
+                self.credentials,
+                email,
             )
 
             logger.info(
@@ -544,10 +549,16 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
         self, creds: google.auth.credentials.Credentials, email: str
     ) -> typing.List[str]:
         """
-        Synchronous helper to fetch groups using Admin SDK.
+        Synchronous helper to fetch groups using Cloud Identity Groups API.
+
+        This uses the Cloud Identity Groups API to search for all security groups
+        that a user is a transitive member of. Requires the cloud-identity.groups.readonly scope.
+
+        The service account must have the Groups Reader role assigned in Google
+        Workspace Admin Console. No domain-wide delegation is required.
 
         Args:
-            creds: Google credentials to use
+            creds: Google credentials to use (with cloud-identity.groups.readonly scope)
             email: User's email address
 
         Returns:
@@ -555,37 +566,57 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
         """
         try:
             logger.debug(f"_fetch_groups_sync() called for {email}")
-            import googleapiclient.discovery  # type: ignore[import-untyped]
 
-            # Build the Admin SDK service
-            logger.debug("Building Admin SDK service (admin/directory_v1)")
+            # Build the Cloud Identity Groups API service
+            logger.debug(
+                "Building Cloud Identity Groups API service (cloudidentity/v1)"
+            )
             service = googleapiclient.discovery.build(  # type: ignore[no-untyped-call]
-                "admin", "directory_v1", credentials=creds
+                "cloudidentity", "v1", credentials=creds
             )
 
-            # Fetch groups for the user
-            logger.debug(f"Calling service.groups().list(userKey={email})")
-            result = service.groups().list(userKey=email).execute()
+            logger.debug(f"Searching transitive security groups for {email}")
+            groups = []
+            next_page_token = ""
+            service = googleapiclient.discovery.build("cloudidentity", "v1")
+            while True:
+                query_params = urllib.parse.urlencode(
+                    {
+                        "query": f"member_key_id == '{email.strip()}' && 'cloudidentity.googleapis.com/groups.discussion_forum' in labels && parent == 'customers/C028qv0z5'",
+                        "page_size": 200,
+                        "page_token": next_page_token,
+                    }
+                )
+                request = (
+                    service.groups()
+                    .memberships()
+                    .searchTransitiveGroups(parent="groups/-")
+                )
+                request.uri += "&" + query_params
 
-            logger.debug(f"Admin SDK response: {result}")
+                logger.debug(request.uri)
+                response = request.execute()
 
-            # Extract group email addresses
-            groups = [group["email"] for group in result.get("groups", [])]
+                if "memberships" in response:
+                    groups += [m["groupKey"]["id"] for m in response["memberships"]]
+
+                if "nextPageToken" in response:
+                    next_page_token = response["nextPageToken"]
+                else:
+                    next_page_token = ""
+
+                if len(next_page_token) == 0:
+                    break
+
             logger.debug(
-                f"Extracted {len(groups)} group emails from Admin SDK response"
+                f"Extracted {len(groups)} group emails from Cloud Identity API response"
             )
             return groups
 
-        except ImportError as e:
-            logger.error(f"Failed to import googleapiclient: {e}")
-            logger.error(
-                "Install google-api-python-client to enable group fetching: pip install google-api-python-client"
-            )
-            return []
         except Exception as e:
             # Return empty list on any error
             logger.error(
-                f"Admin SDK call failed for {email}: {type(e).__name__}: {e}",
+                f"Cloud Identity API call failed for {email}: {type(e).__name__}: {e}",
                 exc_info=True,
             )
             return []

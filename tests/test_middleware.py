@@ -148,7 +148,6 @@ class TestMiddlewareWithGroups:
             client_id=client_id,
             required_domains=required_domains,
             credentials=mock_google_credentials,
-            delegated_admin="admin@example.com",
             fetch_groups=True,
         )
 
@@ -163,12 +162,12 @@ class TestMiddlewareWithGroups:
         app_with_groups,
         valid_id_token_claims,
         mock_id_token,
-        mock_admin_sdk_service,
+        mock_cloud_identity_service,
         sample_groups,
     ):
         """Test middleware fetches and exposes user groups."""
         mock_verify.return_value = valid_id_token_claims
-        mock_build.return_value = mock_admin_sdk_service
+        mock_build.return_value = mock_cloud_identity_service
 
         client = TestClient(app_with_groups)
         response = client.get(

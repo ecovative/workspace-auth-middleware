@@ -16,20 +16,18 @@ class TestWorkspaceAuthBackend:
     """Tests for the WorkspaceAuthBackend class."""
 
     async def test_init_with_explicit_credentials(
-        self, client_id, required_domains, mock_google_credentials, delegated_admin
+        self, client_id, required_domains, mock_google_credentials
     ):
         """Test backend initialization with explicit credentials."""
         backend = WorkspaceAuthBackend(
             client_id=client_id,
             required_domains=required_domains,
             credentials=mock_google_credentials,
-            delegated_admin=delegated_admin,
         )
 
         assert backend.client_id == client_id
         assert backend.required_domains == required_domains
         assert backend.credentials == mock_google_credentials
-        assert backend.delegated_admin == delegated_admin
 
     async def test_init_without_credentials_fetch_groups_disabled(
         self, client_id, required_domains
@@ -59,7 +57,7 @@ class TestWorkspaceAuthBackend:
 
         # Verify default() was called with the correct scope
         mock_default.assert_called_once_with(
-            scopes=["https://www.googleapis.com/auth/admin.directory.group.readonly"]
+            scopes=["https://www.googleapis.com/auth/cloud-identity.groups.readonly"]
         )
         assert backend.credentials == mock_google_credentials
 
@@ -231,10 +229,10 @@ class TestGroupFetching:
         assert groups == []
 
     @patch("googleapiclient.discovery.build")
-    async def test_fetch_groups_admin_sdk_not_installed(
+    async def test_fetch_groups_api_client_not_installed(
         self, mock_build, client_id, mock_google_credentials
     ):
-        """Test group fetching handles missing Admin SDK gracefully."""
+        """Test group fetching handles missing googleapiclient gracefully."""
         # Mock import error
         mock_build.side_effect = ImportError("No module named 'googleapiclient'")
 
@@ -250,47 +248,44 @@ class TestGroupFetching:
         assert groups == []
 
     @patch("googleapiclient.discovery.build")
-    async def test_fetch_groups_with_delegation(
+    async def test_fetch_groups_cloud_identity_api(
         self,
         mock_build,
         client_id,
         mock_google_credentials,
-        delegated_admin,
-        mock_admin_sdk_service,
+        mock_cloud_identity_service,
         sample_groups,
     ):
-        """Test group fetching with domain-wide delegation."""
-        mock_build.return_value = mock_admin_sdk_service
+        """Test group fetching using Cloud Identity API."""
+        mock_build.return_value = mock_cloud_identity_service
 
         backend = WorkspaceAuthBackend(
             client_id=client_id,
             credentials=mock_google_credentials,
-            delegated_admin=delegated_admin,
             fetch_groups=True,
         )
 
         groups = await backend._fetch_user_groups("user@example.com")
 
-        # Verify with_subject was called for delegation
-        mock_google_credentials.with_subject.assert_called_once_with(delegated_admin)
-
-        # Verify Admin SDK was called
-        mock_admin_sdk_service.groups().list.assert_called_once_with(
-            userKey="user@example.com"
-        )
+        # Verify Cloud Identity API was called
+        mock_cloud_identity_service.groups().memberships().searchTransitiveGroups.assert_called()
 
         assert groups == sample_groups
 
     @patch("googleapiclient.discovery.build")
     async def test_fetch_groups_api_error(
-        self, mock_build, client_id, mock_google_credentials, mock_admin_sdk_service
+        self,
+        mock_build,
+        client_id,
+        mock_google_credentials,
+        mock_cloud_identity_service,
     ):
         """Test group fetching handles API errors gracefully."""
         # Mock API error
-        mock_admin_sdk_service.groups().list().execute.side_effect = Exception(
+        mock_cloud_identity_service.groups().memberships().searchTransitiveGroups().execute.side_effect = Exception(
             "API Error"
         )
-        mock_build.return_value = mock_admin_sdk_service
+        mock_build.return_value = mock_cloud_identity_service
 
         backend = WorkspaceAuthBackend(
             client_id=client_id,

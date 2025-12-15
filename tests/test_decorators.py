@@ -3,7 +3,7 @@ Tests for authentication and authorization decorators.
 """
 
 import pytest
-from unittest.mock import patch, Mock
+from unittest.mock import patch, MagicMock
 from starlette.applications import Starlette
 from starlette.routing import Route
 from starlette.responses import JSONResponse
@@ -15,6 +15,22 @@ from workspace_auth_middleware import (
     require_auth,
     require_group,
 )
+
+
+def create_cloud_identity_mock(groups):
+    """
+    Helper to create a mock Cloud Identity service with the given groups.
+
+    Args:
+        groups: List of group email addresses
+
+    Returns:
+        MagicMock configured for Cloud Identity API responses
+    """
+    mock_service = MagicMock()
+    api_response = {"memberships": [{"groupKey": {"id": group}} for group in groups]}
+    mock_service.groups.return_value.memberships.return_value.searchTransitiveGroups.return_value.execute.return_value = api_response
+    return mock_service
 
 
 @pytest.fixture
@@ -62,7 +78,6 @@ def app_with_decorators(client_id, required_domains, mock_google_credentials):
         client_id=client_id,
         required_domains=required_domains,
         credentials=mock_google_credentials,
-        delegated_admin="admin@example.com",
         fetch_groups=True,
     )
 
@@ -89,11 +104,11 @@ class TestRequireAuthDecorator:
         app_with_decorators,
         valid_id_token_claims,
         mock_id_token,
-        mock_admin_sdk_service,
+        mock_cloud_identity_service,
     ):
         """Test @require_auth allows authenticated users."""
         mock_verify.return_value = valid_id_token_claims
-        mock_build.return_value = mock_admin_sdk_service
+        mock_build.return_value = mock_cloud_identity_service
 
         client = TestClient(app_with_decorators)
         response = client.get(
@@ -116,11 +131,11 @@ class TestRequireGroupDecorator:
         app_with_decorators,
         valid_id_token_claims,
         mock_id_token,
-        mock_admin_sdk_service,
+        mock_cloud_identity_service,
     ):
         """Test @require_group allows users in the required group."""
         mock_verify.return_value = valid_id_token_claims
-        mock_build.return_value = mock_admin_sdk_service
+        mock_build.return_value = mock_cloud_identity_service
 
         client = TestClient(app_with_decorators)
         response = client.get(
@@ -143,10 +158,8 @@ class TestRequireGroupDecorator:
         """Test @require_group blocks users not in required group."""
         mock_verify.return_value = valid_id_token_claims
 
-        # Mock empty groups
-        mock_service = Mock()
-        mock_service.groups().list().execute.return_value = {"groups": []}
-        mock_build.return_value = mock_service
+        # Mock empty groups (Cloud Identity API format)
+        mock_build.return_value = create_cloud_identity_mock([])
 
         client = TestClient(app_with_decorators, raise_server_exceptions=False)
         response = client.get(
@@ -169,12 +182,8 @@ class TestRequireGroupDecorator:
         """Test @require_group with multiple groups (any match)."""
         mock_verify.return_value = valid_id_token_claims
 
-        # User is only in team-a
-        mock_service = Mock()
-        mock_service.groups().list().execute.return_value = {
-            "groups": [{"email": "team-a@example.com"}]
-        }
-        mock_build.return_value = mock_service
+        # User is only in team-a (Cloud Identity API format)
+        mock_build.return_value = create_cloud_identity_mock(["team-a@example.com"])
 
         client = TestClient(app_with_decorators)
         response = client.get(
@@ -197,15 +206,13 @@ class TestRequireGroupDecorator:
         """Test @require_group with require_all=True."""
         mock_verify.return_value = valid_id_token_claims
 
-        # User has both required groups
-        mock_service = Mock()
-        mock_service.groups().list().execute.return_value = {
-            "groups": [
-                {"email": "managers@example.com"},
-                {"email": "leads@example.com"},
+        # User has both required groups (Cloud Identity API format)
+        mock_build.return_value = create_cloud_identity_mock(
+            [
+                "managers@example.com",
+                "leads@example.com",
             ]
-        }
-        mock_build.return_value = mock_service
+        )
 
         client = TestClient(app_with_decorators)
         response = client.get(
@@ -228,12 +235,8 @@ class TestRequireGroupDecorator:
         """Test @require_group with require_all=True when user is missing one group."""
         mock_verify.return_value = valid_id_token_claims
 
-        # User only has one of the two required groups
-        mock_service = Mock()
-        mock_service.groups().list().execute.return_value = {
-            "groups": [{"email": "managers@example.com"}]
-        }
-        mock_build.return_value = mock_service
+        # User only has one of the two required groups (Cloud Identity API format)
+        mock_build.return_value = create_cloud_identity_mock(["managers@example.com"])
 
         client = TestClient(app_with_decorators, raise_server_exceptions=False)
         response = client.get(
@@ -256,11 +259,11 @@ class TestStarletteRequiresDecorator:
         app_with_decorators,
         valid_id_token_claims,
         mock_id_token,
-        mock_admin_sdk_service,
+        mock_cloud_identity_service,
     ):
         """Test Starlette's @requires('authenticated') decorator."""
         mock_verify.return_value = valid_id_token_claims
-        mock_build.return_value = mock_admin_sdk_service
+        mock_build.return_value = mock_cloud_identity_service
 
         client = TestClient(app_with_decorators)
         response = client.get(
@@ -291,12 +294,8 @@ class TestStarletteRequiresDecorator:
         """Test Starlette's @requires with group scope."""
         mock_verify.return_value = valid_id_token_claims
 
-        # User is in developers group
-        mock_service = Mock()
-        mock_service.groups().list().execute.return_value = {
-            "groups": [{"email": "developers@example.com"}]
-        }
-        mock_build.return_value = mock_service
+        # User is in developers group (Cloud Identity API format)
+        mock_build.return_value = create_cloud_identity_mock(["developers@example.com"])
 
         client = TestClient(app_with_decorators)
         response = client.get(
@@ -319,10 +318,8 @@ class TestStarletteRequiresDecorator:
         """Test Starlette's @requires blocks users without required group scope."""
         mock_verify.return_value = valid_id_token_claims
 
-        # User has no groups
-        mock_service = Mock()
-        mock_service.groups().list().execute.return_value = {"groups": []}
-        mock_build.return_value = mock_service
+        # User has no groups (Cloud Identity API format)
+        mock_build.return_value = create_cloud_identity_mock([])
 
         client = TestClient(app_with_decorators)
         response = client.get(
