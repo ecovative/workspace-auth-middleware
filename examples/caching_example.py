@@ -22,7 +22,6 @@ logging.basicConfig(
 backend = WorkspaceAuthBackend(
     client_id="your-client-id.apps.googleusercontent.com",
     required_domains=["example.com"],
-    delegated_admin="admin@example.com",
     # Caching options (all optional, these are the defaults)
     enable_token_cache=True,
     token_cache_ttl=300,  # 5 minutes

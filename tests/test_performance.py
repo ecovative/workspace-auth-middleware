@@ -75,7 +75,6 @@ def benchmark_app_with_groups(client_id, required_domains, mock_google_credentia
         client_id=client_id,
         required_domains=required_domains,
         credentials=mock_google_credentials,
-        delegated_admin="admin@example.com",
         fetch_groups=True,
     )
 
@@ -162,16 +161,16 @@ class TestAuthenticationPerformance:
         benchmark_app_with_groups,
         valid_id_token_claims,
         mock_id_token,
-        mock_admin_sdk_service,
+        mock_cloud_identity_service,
     ):
         """
         Benchmark group fetching performance.
 
-        This measures the time to fetch groups from Admin SDK.
-        Actual performance depends on Admin SDK API latency.
+        This measures the time to fetch groups from Cloud Identity API.
+        Actual performance depends on Cloud Identity API latency.
         """
         mock_verify.return_value = valid_id_token_claims
-        mock_build.return_value = mock_admin_sdk_service
+        mock_build.return_value = mock_cloud_identity_service
         client = TestClient(benchmark_app_with_groups)
 
         def request_with_groups():

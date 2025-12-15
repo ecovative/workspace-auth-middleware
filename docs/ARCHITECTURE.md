@@ -56,8 +56,8 @@ This document describes the internal architecture and code structure of `workspa
 │           │                      │                              │
 │           ▼                      ▼                              │
 │  ┌──────────────────┐  ┌──────────────────┐                     │
-│  │ Google ID Token  │  │  Admin SDK API   │                     │
-│  │  Verification    │  │  (Groups)        │                     │
+│  │ Google ID Token  │  │ Cloud Identity   │                     │
+│  │  Verification    │  │  Groups API      │                     │
 │  └──────────────────┘  └──────────────────┘                     │
 └───────────────────────────┬─────────────────────────────────────┘
                             │
@@ -177,14 +177,14 @@ app.add_middleware(
 **Responsibilities**:
 - Extract and validate Google ID tokens from `Authorization` header
 - Verify tokens against Google's public keys
-- Fetch user's Google Workspace group memberships via Admin SDK
+- Fetch user's Google Workspace group memberships via Cloud Identity Groups API
 - Cache token verification and group fetching results
 - Return `(AuthCredentials, WorkspaceUser)` or `None`
 
 **Key Methods**:
 - `authenticate(conn)`: Main authentication entry point (called by Starlette)
 - `_verify_token(token)`: Verify Google ID token (with caching)
-- `_fetch_user_groups(email)`: Fetch user's groups from Admin SDK (with caching)
+- `_fetch_user_groups(email)`: Fetch user's groups from Cloud Identity API (with caching)
 - `get_cache_stats()`: Return cache hit rates and statistics
 - `clear_caches()`: Clear all caches
 - `invalidate_token(token)`: Remove specific token from cache
@@ -196,7 +196,7 @@ app.add_middleware(
 3. Verify token (check cache first, then call Google API)
 4. Extract user info from token claims
 5. Validate domain restrictions (if configured)
-6. Fetch user's groups (check cache first, then call Admin SDK)
+6. Fetch user's groups (check cache first, then call Cloud Identity API)
 7. Create `WorkspaceUser` object
 8. Populate scopes: `["authenticated", "group:<group1>", "group:<group2>", ...]`
 9. Return `(AuthCredentials, WorkspaceUser)`
@@ -389,7 +389,7 @@ async def admin_panel(request):
    - SessionMiddleware extracts session from cookie
    - WorkspaceAuthBackend reads `session['user']`
    - Validates domain (if `required_domains` is set)
-   - Fetches groups from Admin SDK (if `fetch_groups=True`)
+   - Fetches groups from Cloud Identity API (if `fetch_groups=True`)
    - Creates `WorkspaceUser` with groups
    - Populates `request.user` and `request.auth`
 
@@ -431,7 +431,7 @@ async def admin_panel(request):
    ├─ Validate domain restrictions
    ├─ Fetch user's groups (cached)
    │  ├─ Check group cache
-   │  ├─ If miss: Call Admin SDK groups().list()
+   │  ├─ If miss: Call Cloud Identity Groups API
    │  └─ Cache result for 5 minutes
    ├─ Create WorkspaceUser object
    ├─ Create AuthCredentials with scopes
@@ -471,7 +471,7 @@ async def admin_panel(request):
    │  │  ├─ Extract user_data from conn.session["user"]
    │  │  ├─ Validate domain if required_domains is set
    │  │  └─ Create WorkspaceUser from session data
-   │  ├─ Optionally fetch fresh groups via Admin SDK
+   │  ├─ Optionally fetch fresh groups via Cloud Identity API
    │  │  └─ Calls _fetch_user_groups(email) with caching
    │  └─ Return (AuthCredentials, WorkspaceUser)
    └─ If session auth fails/disabled: Fall back to bearer token auth
@@ -533,7 +533,7 @@ Full type annotations using Starlette's interfaces:
 
 All operations are async-aware:
 - Backend's `authenticate()` is async
-- Synchronous operations (Admin SDK) run in executors
+- Synchronous operations (Cloud Identity API) run in executors
 - Non-blocking I/O throughout
 
 ### 6. High Performance
@@ -636,13 +636,12 @@ from google.oauth2 import service_account
 
 credentials = service_account.Credentials.from_service_account_file(
     'service-account-key.json',
-    scopes=['https://www.googleapis.com/auth/admin.directory.group.readonly']
+    scopes=['https://www.googleapis.com/auth/cloud-identity.groups.readonly']
 )
 
 backend = WorkspaceAuthBackend(
     client_id="...",
     credentials=credentials,
-    delegated_admin="admin@example.com",
 )
 ```
 
@@ -729,4 +728,4 @@ This gives you full control over the middleware configuration while using the Go
 - [Starlette Middleware](https://www.starlette.dev/middleware/)
 - [FastAPI Middleware](https://fastapi.tiangolo.com/advanced/middleware/)
 - [Google ID Token Verification](https://developers.google.com/identity/sign-in/web/backend-auth)
-- [Admin SDK Directory API](https://developers.google.com/admin-sdk/directory/reference/rest)
+- [Cloud Identity Groups API](https://cloud.google.com/identity/docs/reference/rest)

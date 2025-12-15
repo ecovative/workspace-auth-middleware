@@ -187,11 +187,12 @@ No credentials file is needed - token verification happens via Google's public A
 ### For Group Fetching
 
 You need:
-1. **Service Account** with domain-wide delegation enabled
-2. **Admin SDK API** enabled in your Google Cloud project
-3. **OAuth Scopes** granted to the service account:
-   - `https://www.googleapis.com/auth/admin.directory.group.readonly`
-4. **Service Account Key** downloaded as JSON
+1. **Service Account** in your Google Cloud project
+2. **Cloud Identity API** enabled in your Google Cloud project
+3. **Groups Reader role** granted to the service account in Google Workspace Admin
+4. **OAuth Scopes** configured for the service account:
+   - `https://www.googleapis.com/auth/cloud-identity.groups.readonly`
+5. **Service Account Key** downloaded as JSON
 
 **Steps:**
 
@@ -199,19 +200,18 @@ You need:
    - Go to [Google Cloud Console](https://console.cloud.google.com/)
    - Navigate to IAM & Admin > Service Accounts
    - Create a new service account
-   - Enable domain-wide delegation
    - Download the JSON key
 
-2. **Enable Admin SDK:**
+2. **Enable Cloud Identity API:**
    - Go to APIs & Services > Library
-   - Search for "Admin SDK API"
+   - Search for "Cloud Identity API"
    - Click Enable
 
-3. **Configure Domain-Wide Delegation:**
+3. **Grant Groups Reader Role:**
    - Go to your [Google Workspace Admin Console](https://admin.google.com/)
-   - Navigate to Security > API Controls > Domain-wide Delegation
-   - Add the service account's Client ID
-   - Add the OAuth scope: `https://www.googleapis.com/auth/admin.directory.group.readonly`
+   - Navigate to Account > Admin roles
+   - Create or edit a role with Groups Reader privileges
+   - Assign the role to your service account
 
 4. **Set environment variable:**
    ```bash

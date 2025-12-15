@@ -119,7 +119,6 @@ app.add_middleware(
     required_domains=["example.com", "partner.com"],  # Restrict to specific domains
     fetch_groups=True,                                 # Fetch user's Google Workspace groups
     credentials=None,                                  # Custom credentials (default: ADC)
-    delegated_admin="admin@example.com",              # Admin email for delegation
     on_error=None,                                    # Custom error handler
 )
 ```
@@ -833,7 +832,7 @@ app = FastAPI(title="Advanced API")
 # Load credentials
 credentials = service_account.Credentials.from_service_account_file(
     'service-account-key.json',
-    scopes=['https://www.googleapis.com/auth/admin.directory.group.readonly']
+    scopes=['https://www.googleapis.com/auth/cloud-identity.groups.readonly']
 )
 
 # Configure backend
@@ -842,7 +841,6 @@ backend = WorkspaceAuthBackend(
     required_domains=["example.com"],
     fetch_groups=True,
     credentials=credentials,
-    delegated_admin="admin@example.com",
     # Custom caching
     enable_token_cache=True,
     token_cache_ttl=120,
@@ -1015,8 +1013,8 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/profile
 **Solution**:
 1. Set `GOOGLE_APPLICATION_CREDENTIALS`
 2. Enable `fetch_groups=True`
-3. Provide `delegated_admin` email
-4. Verify service account has domain-wide delegation
+3. Verify service account has Groups Reader role in Google Workspace Admin
+4. Ensure Cloud Identity API is enabled in Google Cloud Console
 
 ### Problem: Dependencies not working
 

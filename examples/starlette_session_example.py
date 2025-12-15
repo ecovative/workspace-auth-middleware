@@ -49,7 +49,6 @@ backend = WorkspaceAuthBackend(
     client_id=CLIENT_ID,
     required_domains=[WORKSPACE_DOMAIN] if WORKSPACE_DOMAIN else None,
     fetch_groups=True,
-    delegated_admin=DELEGATED_ADMIN,
     enable_session_auth=True,  # Enable Starlette session support
 )
 

@@ -103,7 +103,6 @@ middleware = [
         required_domains=["example.com", "partner.com"],  # Restrict to specific domains
         fetch_groups=True,                                 # Fetch user's Google Workspace groups
         credentials=None,                                  # Custom credentials (default: ADC)
-        delegated_admin="admin@example.com",              # Admin email for delegation
         on_error=None,                                    # Custom error handler
     )
 ]
@@ -515,7 +514,7 @@ from workspace_auth_middleware import (
 # Load custom credentials
 credentials = service_account.Credentials.from_service_account_file(
     'service-account-key.json',
-    scopes=['https://www.googleapis.com/auth/admin.directory.group.readonly']
+    scopes=['https://www.googleapis.com/auth/cloud-identity.groups.readonly']
 )
 
 # Configure backend with custom caching
@@ -524,7 +523,6 @@ backend = WorkspaceAuthBackend(
     required_domains=["example.com"],
     fetch_groups=True,
     credentials=credentials,
-    delegated_admin="admin@example.com",
     # Custom cache settings
     enable_token_cache=True,
     token_cache_ttl=120,        # 2 minutes
@@ -697,7 +695,6 @@ Middleware(
     WorkspaceAuthMiddleware,
     client_id="...",
     fetch_groups=True,  # Enable for group-based authorization
-    delegated_admin="admin@example.com",
 )
 ```
 
@@ -781,9 +778,8 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/protected
 
 **Solution**:
 1. Set `GOOGLE_APPLICATION_CREDENTIALS` environment variable
-2. Ensure service account has domain-wide delegation
-3. Verify `delegated_admin` email is correct
-4. Check Admin SDK API is enabled in Google Cloud Console
+2. Ensure service account has Groups Reader role in Google Workspace Admin
+3. Check Cloud Identity API is enabled in Google Cloud Console
 
 ### Problem: "User domain not in allowed domains"
 

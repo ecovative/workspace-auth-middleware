@@ -320,7 +320,6 @@ WorkspaceAuthMiddleware **automatically fetches groups** when `fetch_groups=True
 backend = WorkspaceAuthBackend(
     client_id="your-client-id.apps.googleusercontent.com",
     fetch_groups=True,  # Enable automatic group fetching
-    delegated_admin="admin@example.com",
     enable_group_cache=True,  # Cache for performance
     group_cache_ttl=300,  # 5 minutes
 )

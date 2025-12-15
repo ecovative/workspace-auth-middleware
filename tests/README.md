@@ -72,9 +72,9 @@ The `test_integration_adc.py` file contains tests that use real Google credentia
    ```
 
 2. **Ensure your service account has**:
-   - Domain-wide delegation enabled
-   - Admin SDK scope: `https://www.googleapis.com/auth/admin.directory.group.readonly`
-   - Permissions to read groups in your Google Workspace
+   - Groups Reader role granted in Google Workspace Admin Console
+   - Cloud Identity scope: `https://www.googleapis.com/auth/cloud-identity.groups.readonly`
+   - Cloud Identity API enabled in Google Cloud Console
 
 3. **Set required environment variables**:
 
@@ -347,7 +347,7 @@ Key fixtures available in `conftest.py`:
 - `valid_id_token_claims`: Sample claims from a Google ID token
 - `mock_id_token`: Mock token string
 - `sample_groups`: Sample Google Workspace groups
-- `mock_admin_sdk_service`: Mock Admin SDK service
+- `mock_cloud_identity_service`: Mock Cloud Identity service for group fetching
 
 ## Debugging Failed Tests
 

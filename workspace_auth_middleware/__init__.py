@@ -33,6 +33,24 @@ requires = starlette.authentication.requires
 
 __version__ = "0.1.0"
 
-__all__ = ["LOGGER_NAME"]
+__all__ = [
+    # Core components
+    "WorkspaceAuthMiddleware",
+    "WorkspaceAuthBackend",
+    "WorkspaceUser",
+    "AnonymousUser",
+    # Decorators
+    "require_auth",
+    "require_group",
+    "require_scope",
+    "PermissionDenied",
+    # Starlette re-exports
+    "AuthenticationError",
+    "AuthCredentials",
+    "requires",
+    # Constants
+    "LOGGER_NAME",
+    "__version__",
+]
 
 LOGGER_NAME = "workspace_auth_middleware"

@@ -484,12 +484,14 @@ To enable group fetching, you need to:
 
 1. **Create a Service Account** in Google Cloud Console
 
-2. **Enable Domain-Wide Delegation** for the service account
+2. **Grant the Groups Reader role** to the service account in Google Workspace Admin Console
 
-3. **Grant API Scopes**:
-   - `https://www.googleapis.com/auth/admin.directory.group.readonly`
+3. **Enable Cloud Identity API** in Google Cloud Console
 
-4. **Configure credentials** in your application
+4. **Grant API Scopes**:
+   - `https://www.googleapis.com/auth/cloud-identity.groups.readonly`
+
+5. **Configure credentials** in your application
 
 ### Using Default Application Credentials
 
@@ -510,7 +512,6 @@ app.add_middleware(
     client_id="your-client-id.apps.googleusercontent.com",
     required_domains=["example.com"],
     fetch_groups=True,
-    delegated_admin="admin@example.com",  # Admin for domain-wide delegation
 )
 ```
 
@@ -527,7 +528,7 @@ from workspace_auth_middleware import WorkspaceAuthMiddleware
 # Load service account credentials
 credentials = service_account.Credentials.from_service_account_file(
     'service-account-key.json',
-    scopes=['https://www.googleapis.com/auth/admin.directory.group.readonly']
+    scopes=['https://www.googleapis.com/auth/cloud-identity.groups.readonly']
 )
 
 app.add_middleware(
@@ -536,7 +537,6 @@ app.add_middleware(
     required_domains=["example.com"],
     fetch_groups=True,
     credentials=credentials,
-    delegated_admin="admin@example.com",
 )
 ```
 
@@ -549,7 +549,7 @@ from workspace_auth_middleware import WorkspaceAuthBackend
 
 credentials = service_account.Credentials.from_service_account_file(
     'service-account-key.json',
-    scopes=['https://www.googleapis.com/auth/admin.directory.group.readonly']
+    scopes=['https://www.googleapis.com/auth/cloud-identity.groups.readonly']
 )
 
 backend = WorkspaceAuthBackend(
@@ -557,7 +557,6 @@ backend = WorkspaceAuthBackend(
     required_domains=["example.com"],
     fetch_groups=True,
     credentials=credentials,
-    delegated_admin="admin@example.com",
 )
 
 app.add_middleware(AuthenticationMiddleware, backend=backend)
@@ -733,7 +732,7 @@ poetry run pytest --cov=workspace_auth_middleware tests
 
 ### Testing with Real Credentials
 
-Want to test with your actual Google Workspace credentials? See the **[Testing Guide](./TESTING_GUIDE.md)** for complete instructions.
+Want to test with your actual Google Workspace credentials? See the **[Testing Guide](./docs/TESTING_GUIDE.md)** for complete instructions.
 
 Quick start:
 ```bash

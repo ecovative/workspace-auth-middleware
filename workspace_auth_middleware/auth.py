@@ -13,6 +13,7 @@ import urllib.parse
 import google.auth
 import google.auth.credentials
 import google.auth.transport.requests
+import google.oauth2.id_token
 import googleapiclient.discovery  # type: ignore[import-untyped]
 import starlette.authentication
 import starlette.requests

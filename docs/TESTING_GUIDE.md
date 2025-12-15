@@ -254,27 +254,25 @@ gcloud auth application-default login
 ### "Group fetching failed: Insufficient permissions"
 
 **Common causes:**
-1. Service account doesn't have domain-wide delegation enabled
+1. Service account doesn't have Groups Reader role in Google Workspace
 2. OAuth scopes not configured correctly
-3. Admin SDK API not enabled
+3. Cloud Identity API not enabled
 
 **Solution:**
 
-1. Enable domain-wide delegation:
-   - Go to [Google Cloud Console](https://console.cloud.google.com/)
-   - IAM & Admin > Service Accounts
-   - Edit your service account > Enable domain-wide delegation
+1. Grant Groups Reader role:
+   - Go to [Google Workspace Admin Console](https://admin.google.com/)
+   - Account > Admin roles
+   - Create or edit a role with Groups Reader privileges
+   - Assign the role to your service account
 
 2. Configure OAuth scopes:
-   - Go to [Google Workspace Admin Console](https://admin.google.com/)
-   - Security > API Controls > Domain-wide Delegation
-   - Add your service account's Client ID
-   - Add scope: `https://www.googleapis.com/auth/admin.directory.group.readonly`
+   - Ensure your service account has the scope: `https://www.googleapis.com/auth/cloud-identity.groups.readonly`
 
-3. Enable Admin SDK API:
+3. Enable Cloud Identity API:
    - Go to [Google Cloud Console](https://console.cloud.google.com/)
    - APIs & Services > Library
-   - Search "Admin SDK API" > Enable
+   - Search "Cloud Identity API" > Enable
 
 ### "401 Unauthorized"
 
@@ -318,9 +316,9 @@ No special setup needed! Just create an OAuth 2.0 Client ID:
 
 Follow the [complete setup guide](./examples/README.md#google-cloud-setup-requirements) for:
 - Creating a service account
-- Enabling domain-wide delegation
+- Granting Groups Reader role in Google Workspace Admin
 - Configuring OAuth scopes
-- Enabling Admin SDK API
+- Enabling Cloud Identity API
 
 ## Additional Resources
 
@@ -328,4 +326,4 @@ Follow the [complete setup guide](./examples/README.md#google-cloud-setup-requir
 - **Integration Tests:** [`./tests/test_integration_adc.py`](./tests/test_integration_adc.py)
 - **Main Documentation:** [`./README.md`](./README.md)
 - [Google OAuth2 Documentation](https://developers.google.com/identity/protocols/oauth2)
-- [Google Workspace Admin SDK](https://developers.google.com/admin-sdk)
+- [Cloud Identity Groups API](https://cloud.google.com/identity/docs/reference/rest)

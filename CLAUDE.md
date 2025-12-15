@@ -174,13 +174,12 @@ from google.oauth2 import service_account
 
 credentials = service_account.Credentials.from_service_account_file(
     'service-account-key.json',
-    scopes=['https://www.googleapis.com/auth/admin.directory.group.readonly']
+    scopes=['https://www.googleapis.com/auth/cloud-identity.groups.readonly']
 )
 
 backend = WorkspaceAuthBackend(
     client_id="...",
     credentials=credentials,
-    delegated_admin="admin@example.com",
 )
 ```
 
@@ -193,9 +192,8 @@ backend = WorkspaceAuthBackend(
 ```
 
 Group fetching requires:
-- Service account with domain-wide delegation
-- Admin SDK scope: `https://www.googleapis.com/auth/admin.directory.group.readonly`
-- Admin email for delegation (`delegated_admin` parameter)
+- Service account with Groups Reader role in Google Workspace Admin Console
+- Cloud Identity scope: `https://www.googleapis.com/auth/cloud-identity.groups.readonly`
 - `google-api-python-client` package installed
 
 ## Development Environment Setup

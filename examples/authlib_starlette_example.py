@@ -65,8 +65,8 @@ oauth.register(
     server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
     client_kwargs={
         "scope": "openid email profile",
-        # Add Admin SDK scope if you want to fetch groups during OAuth
-        # 'scope': 'openid email profile https://www.googleapis.com/auth/admin.directory.group.readonly',
+        # Add Cloud Identity scope if you want to fetch groups during OAuth
+        # 'scope': 'openid email profile https://www.googleapis.com/auth/cloud-identity.groups.readonly',
     },
 )
 
@@ -276,7 +276,6 @@ middleware = [
             client_id=CLIENT_ID,
             required_domains=[WORKSPACE_DOMAIN] if WORKSPACE_DOMAIN else None,
             fetch_groups=True,  # Fetch Google Workspace groups
-            delegated_admin=DELEGATED_ADMIN,
             enable_session_auth=True,  # Read from session (populated by Authlib)
         ),
     ),

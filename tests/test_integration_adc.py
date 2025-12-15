@@ -7,9 +7,9 @@ configured via the GOOGLE_APPLICATION_CREDENTIALS environment variable.
 Setup instructions:
 1. Follow https://cloud.google.com/docs/authentication/set-up-adc-local-dev-environment
 2. Set GOOGLE_APPLICATION_CREDENTIALS to your service account key path
-3. Ensure the service account has domain-wide delegation enabled
-4. Ensure the service account has the Admin SDK scope:
-   https://www.googleapis.com/auth/admin.directory.group.readonly
+3. Ensure the service account has Groups Reader role in Google Workspace Admin
+4. Ensure the service account has the Cloud Identity scope:
+   https://www.googleapis.com/auth/cloud-identity.groups.readonly
 
 These tests will be skipped if:
 - GOOGLE_APPLICATION_CREDENTIALS is not set
@@ -45,7 +45,7 @@ def adc_available():
         from google.auth import default
 
         credentials, project = default(
-            scopes=["https://www.googleapis.com/auth/admin.directory.group.readonly"]
+            scopes=["https://www.googleapis.com/auth/cloud-identity.groups.readonly"]
         )
         return credentials is not None
     except Exception:
@@ -127,19 +127,17 @@ class TestADCIntegration:
         from google.auth import default
 
         credentials, _ = default(
-            scopes=["https://www.googleapis.com/auth/admin.directory.group.readonly"]
+            scopes=["https://www.googleapis.com/auth/cloud-identity.groups.readonly"]
         )
 
         backend = WorkspaceAuthBackend(
             client_id=integration_client_id,
             required_domains=integration_required_domains,
             credentials=credentials,
-            delegated_admin=integration_admin_email,
             fetch_groups=True,
         )
 
         assert backend.credentials is not None
-        assert backend.delegated_admin == integration_admin_email
 
     @pytest.mark.asyncio
     async def test_group_fetching_with_adc(
@@ -153,8 +151,8 @@ class TestADCIntegration:
         Test that group fetching works with real ADC.
 
         Note: This test requires:
-        - Valid service account with domain-wide delegation
-        - Admin SDK enabled
+        - Valid service account with Groups Reader role
+        - Cloud Identity API enabled
         - Proper scopes configured
         """
         if not adc_available:
@@ -167,7 +165,6 @@ class TestADCIntegration:
         backend = WorkspaceAuthBackend(
             client_id=integration_client_id,
             required_domains=integration_required_domains,
-            delegated_admin=integration_admin_email,
             fetch_groups=True,
         )
 
@@ -226,7 +223,6 @@ class TestMiddlewareWithADC:
             WorkspaceAuthMiddleware,
             client_id=integration_client_id,
             required_domains=integration_required_domains,
-            delegated_admin=integration_admin_email,
             fetch_groups=True,
         )
 
