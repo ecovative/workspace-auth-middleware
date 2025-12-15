@@ -27,7 +27,7 @@ url = "https://us-east1-python.pkg.dev/eco-info-system/data-systems-artifact-rep
 priority = "supplemental"
 
 [tool.poetry.group.dev.dependencies]
-mypy = "^1.18.2"
+mypy = "^1.19.1"
 ruff = "^0.14.1"
 pytest = "^8.4.2"
 pre-commit = "^4.3.0"
