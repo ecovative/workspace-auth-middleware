@@ -19,7 +19,7 @@ jobs:
         python-version: ['3.12', '3.13']
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           fetch-tags: true
@@ -57,7 +57,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           fetch-tags: true
@@ -83,7 +83,7 @@ jobs:
           bash build_wheels.sh
 
       - name: Upload Python Build Artifacts
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: build-artifacts
           path: dist/
@@ -96,13 +96,13 @@ jobs:
       contents: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           fetch-tags: true
 
       - name: Download Build Artifacts
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: build-artifacts
           path: dist/
@@ -133,7 +133,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           fetch-tags: true
@@ -145,7 +145,7 @@ jobs:
         run: echo "${HOME}/.local/bin" >> $GITHUB_PATH
 
       - name: Download Build Artifacts
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: build-artifacts
           path: dist/
