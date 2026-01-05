@@ -37,7 +37,7 @@ priority = "supplemental"
 [tool.poetry.group.dev.dependencies]
 mypy = "^1.18.2"
 ruff = "^0.14.1"
-pytest = "^8.4.2"
+pytest = "^9.0.2"
 pre-commit = "^4.3.0"
 yamllint = "^1.37.1"
 pytest-xdist = "^3.8.0"
