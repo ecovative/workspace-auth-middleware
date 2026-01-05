@@ -40,27 +40,27 @@ async def demo_caching():
     token = "mock_token_123"
     try:
         claims = await backend._verify_token(token)
-        logger.info(f"First verification: {claims}")
-    except Exception as e:
-        logger.error(f"Token verification failed: {e}")
+        logger.info("First verification: %s", claims)
+    except Exception:
+        logger.error("Token verification failed", exc_info=True)
 
     # Second request with same token - cache hit!
     # This will return from cache without hitting Google
     try:
         claims = await backend._verify_token(token)
-        logger.info(f"Second verification (from cache): {claims}")
-    except Exception as e:
-        logger.error(f"Token verification failed: {e}")
+        logger.info("Second verification (from cache): %s", claims)
+    except Exception:
+        logger.error("Token verification failed", exc_info=True)
 
     # Get cache statistics
     stats = backend.get_cache_stats()
     logger.info("Cache Statistics:")
-    logger.info(f"Token cache: {stats['token_cache']}")
-    logger.info(f"Group cache: {stats['group_cache']}")
+    logger.info("Token cache: %s", stats["token_cache"])
+    logger.info("Group cache: %s", stats["group_cache"])
 
     # Cache invalidation example
     backend.invalidate_token(token)
-    logger.info(f"Invalidated token: {token}")
+    logger.info("Invalidated token: %s", token)
 
     # This will be another cache miss
     try:
@@ -71,9 +71,9 @@ async def demo_caching():
     # Check stats again
     stats = backend.get_cache_stats()
     logger.info("Cache Statistics after invalidation:")
-    logger.info(f"Token cache hits: {stats['token_cache']['hits']}")
-    logger.info(f"Token cache misses: {stats['token_cache']['misses']}")
-    logger.info(f"Cache hit rate: {stats['token_cache']['hit_rate']:.2%}")
+    logger.info("Token cache hits: %s", stats["token_cache"]["hits"])
+    logger.info("Token cache misses: %s", stats["token_cache"]["misses"])
+    logger.info("Cache hit rate: %.2f%%", stats["token_cache"]["hit_rate"] * 100)
 
 
 # Configuration examples

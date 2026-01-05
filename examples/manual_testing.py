@@ -134,10 +134,12 @@ async def permission_denied_handler(request: Request, exc: PermissionDenied):
 
 # Configure middleware
 logger.info("Configuring WorkspaceAuthMiddleware...")
-logger.info(f"  Client ID: {CLIENT_ID}")
-logger.info(f"  Workspace Domain: {WORKSPACE_DOMAIN or 'Not set (any domain allowed)'}")
-logger.info(f"  Fetch Groups: {FETCH_GROUPS}")
-logger.info(f"  Delegated Admin: {DELEGATED_ADMIN or 'Not set'}")
+logger.info("  Client ID: %s", CLIENT_ID)
+logger.info(
+    "  Workspace Domain: %s", WORKSPACE_DOMAIN or "Not set (any domain allowed)"
+)
+logger.info("  Fetch Groups: %s", FETCH_GROUPS)
+logger.info("  Delegated Admin: %s", DELEGATED_ADMIN or "Not set")
 
 app.add_middleware(
     WorkspaceAuthMiddleware,

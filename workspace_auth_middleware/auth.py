@@ -57,22 +57,24 @@ def _authenticate_from_session(
         user_data = conn.session.get("user")
     except (AssertionError, AttributeError, RuntimeError) as e:
         # SessionMiddleware not installed
-        logger.debug(f"Session not available: {type(e).__name__}")
+        logger.debug("Session not available: %s", type(e).__name__)
         return None
 
     if not isinstance(user_data, dict):
-        logger.debug(f"Session user data is not a dict: {type(user_data)}")
+        logger.debug("Session user data is not a dict: %s", type(user_data))
         return None
 
     # Extract required fields
     email = user_data.get("email")
     user_id = user_data.get("user_id")
 
-    logger.debug(f"Session data found - email: {email}, user_id: {user_id}")
+    logger.debug("Session data found - email: %s, user_id: %s", email, user_id)
 
     if not email or not user_id:
         logger.warning(
-            f"Session missing required fields - email: {bool(email)}, user_id: {bool(user_id)}"
+            "Session missing required fields - email: %s, user_id: %s",
+            bool(email),
+            bool(user_id),
         )
         return None
 
@@ -81,7 +83,7 @@ def _authenticate_from_session(
         domain = email.split("@")[-1]
         if domain not in required_domains:
             logger.warning(
-                f"Domain '{domain}' not in required domains: {required_domains}"
+                "Domain '%s' not in required domains: %s", domain, required_domains
             )
             return None
 
@@ -89,12 +91,12 @@ def _authenticate_from_session(
     groups = user_data.get("groups", [])
     if not isinstance(groups, list):
         logger.warning(
-            f"Session groups is not a list: {type(groups)}, converting to empty list"
+            "Session groups is not a list: %s, converting to empty list", type(groups)
         )
         groups = []
 
     logger.info(
-        f"Session auth successful for {email} with {len(groups)} groups: {groups}"
+        "Session auth successful for %s with %d groups: %s", email, len(groups), groups
     )
 
     # Create user
@@ -175,7 +177,7 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
 
     def __init__(
         self,
-        client_id: str,
+        client_id: typing.Union[str, typing.List[str]],
         required_domains: typing.Optional[typing.List[str]] = None,
         fetch_groups: bool = True,
         credentials: typing.Optional[google.auth.credentials.Credentials] = None,
@@ -187,17 +189,24 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
         group_cache_maxsize: int = 500,
         enable_session_auth: bool = True,
     ):
-        logger.info(
-            f"Initializing WorkspaceAuthBackend - "
-            f"client_id: {client_id[:20]}..., "
-            f"required_domains: {required_domains}, "
-            f"fetch_groups: {fetch_groups}, "
-            f"enable_session_auth: {enable_session_auth}, "
-            f"enable_token_cache: {enable_token_cache}, "
-            f"enable_group_cache: {enable_group_cache}"
+        # Normalize client_id to a list
+        self.client_ids: typing.List[str] = (
+            [client_id] if isinstance(client_id, str) else list(client_id)
         )
+        # Backwards compatibility: expose first client_id
+        self.client_id = self.client_ids[0] if self.client_ids else ""
 
-        self.client_id = client_id
+        logger.info(
+            "Initializing WorkspaceAuthBackend - "
+            "client_ids: %s, required_domains: %s, fetch_groups: %s, "
+            "enable_session_auth: %s, enable_token_cache: %s, enable_group_cache: %s",
+            [c[:20] + "..." for c in self.client_ids],
+            required_domains,
+            fetch_groups,
+            enable_session_auth,
+            enable_token_cache,
+            enable_group_cache,
+        )
         self.required_domains = required_domains
         self.fetch_groups = fetch_groups
         self.enable_session_auth = enable_session_auth
@@ -249,8 +258,8 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
                 self.credentials.refresh(request)
 
                 logger.info("Credential building complete")
-            except Exception as e:
-                logger.warning("Error getting credentials: %s", e)
+            except Exception:
+                logger.warning("Error getting credentials", exc_info=True)
                 self.credentials = None
         else:
             logger.info("Group fetching disabled - no credentials needed")
@@ -283,7 +292,7 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
             - Session: request.session["user"] = {"email": ..., "user_id": ..., ...}
             - Authorization: Bearer <google_id_token>
         """
-        logger.debug(f"authenticate() called for path: {conn.url.path}")
+        logger.debug("authenticate() called for path: %s", conn.url.path)
 
         # Try session authentication first (if enabled)
         if self.enable_session_auth:
@@ -292,7 +301,8 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
                 session_result = _authenticate_from_session(conn, self.required_domains)
                 if session_result is not None:
                     logger.info(
-                        f"Successfully authenticated via session: {session_result[1].email}"
+                        "Successfully authenticated via session: %s",
+                        session_result[1].email,
                     )
                     return session_result
                 else:
@@ -300,7 +310,8 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
             except (AssertionError, AttributeError, RuntimeError) as e:
                 # SessionMiddleware not installed - skip session auth
                 logger.debug(
-                    f"Session auth failed with {type(e).__name__}, will try bearer token"
+                    "Session auth failed with %s, will try bearer token",
+                    type(e).__name__,
                 )
                 pass
         else:
@@ -335,7 +346,10 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
             domain = email.split("@")[-1] if email else None
 
             logger.debug(
-                f"Token verified - email: {email}, user_id: {user_id}, domain: {domain}"
+                "Token verified - email: %s, user_id: %s, domain: %s",
+                email,
+                user_id,
+                domain,
             )
 
             if not email or not user_id:
@@ -349,7 +363,9 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
             # Check domain restriction if required
             if self.required_domains and domain not in self.required_domains:
                 logger.warning(
-                    f"Domain restriction failed: {domain} not in {self.required_domains}"
+                    "Domain restriction failed: %s not in %s",
+                    domain,
+                    self.required_domains,
                 )
                 raise starlette.authentication.AuthenticationError(
                     f"User domain '{domain}' not in allowed domains: {', '.join(self.required_domains)}"
@@ -359,10 +375,10 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
             groups = []
             if self.fetch_groups:
                 logger.debug(
-                    f"fetch_groups=True, attempting to fetch groups for {email}"
+                    "fetch_groups=True, attempting to fetch groups for %s", email
                 )
                 groups = await self._fetch_user_groups(email)
-                logger.info(f"Fetched {len(groups)} groups for {email}: {groups}")
+                logger.info("Fetched %d groups for %s: %s", len(groups), email, groups)
             else:
                 logger.debug("fetch_groups=False, skipping group fetching")
 
@@ -383,7 +399,10 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
                 scopes.extend([f"group:{group}" for group in groups])
 
             logger.info(
-                f"Successfully authenticated {email} with {len(scopes)} scopes: {scopes}"
+                "Successfully authenticated %s with %d scopes: %s",
+                email,
+                len(scopes),
+                scopes,
             )
 
             credentials = starlette.authentication.AuthCredentials(scopes=scopes)
@@ -416,7 +435,7 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
             AuthenticationError if token is invalid
         """
         token_preview = token[:20] + "..." if len(token) > 20 else token
-        logger.debug(f"_verify_token() called for token: {token_preview}")
+        logger.debug("_verify_token() called for token: %s", token_preview)
 
         # Check cache first
         if isinstance(self._token_cache, cachetools.TTLCache) and isinstance(
@@ -424,10 +443,10 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
         ):
             if token in self._token_cache:
                 self._token_cache_stats["hits"] += 1
-                logger.debug(f"Token cache HIT for {token_preview}")
+                logger.debug("Token cache HIT for %s", token_preview)
                 return self._token_cache[token]
             self._token_cache_stats["misses"] += 1
-            logger.debug(f"Token cache MISS for {token_preview}")
+            logger.debug("Token cache MISS for %s", token_preview)
 
         try:
             # Verify the token with Google
@@ -435,12 +454,30 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
             # by running it in an executor if needed
             logger.debug("Verifying token with Google OAuth2 API")
             request = google.auth.transport.requests.Request()
-            idinfo = google.oauth2.id_token.verify_oauth2_token(
-                token, request, self.client_id
-            )
+
+            # Try each client_id until one succeeds
+            last_error: typing.Optional[ValueError] = None
+            for cid in self.client_ids:
+                try:
+                    idinfo = google.oauth2.id_token.verify_oauth2_token(
+                        token, request, cid
+                    )
+                    logger.debug("Token verified with client_id: %s...", cid[:20])
+                    break
+                except ValueError as e:
+                    last_error = e
+                    logger.debug(
+                        "Token verification failed for client_id %s...: %s", cid[:20], e
+                    )
+            else:
+                raise starlette.authentication.AuthenticationError(
+                    f"Token verification failed: {last_error}"
+                )
 
             logger.debug(
-                f"Token verified successfully - email: {idinfo.get('email')}, sub: {idinfo.get('sub')}"
+                "Token verified successfully - email: %s, sub: %s",
+                idinfo.get("email"),
+                idinfo.get("sub"),
             )
 
             # Additional validation
@@ -448,7 +485,7 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
                 "accounts.google.com",
                 "https://accounts.google.com",
             ]:
-                logger.error(f"Invalid token issuer: {idinfo.get('iss')}")
+                logger.error("Invalid token issuer: %s", idinfo.get("iss"))
                 raise starlette.authentication.AuthenticationError(
                     "Invalid token issuer"
                 )
@@ -456,12 +493,12 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
             # Cache the result
             if isinstance(self._token_cache, cachetools.TTLCache):
                 self._token_cache[token] = idinfo
-                logger.debug(f"Cached token for {idinfo.get('email')}")
+                logger.debug("Cached token for %s", idinfo.get("email"))
 
             return idinfo
 
         except Exception as e:
-            logger.error(f"Token verification failed: {type(e).__name__}: {e}")
+            logger.error("Token verification failed", exc_info=True)
             raise starlette.authentication.AuthenticationError(
                 f"Token verification failed: {str(e)}"
             )
@@ -492,7 +529,7 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
         Raises:
             No exceptions raised - errors are logged and empty list returned
         """
-        logger.debug(f"_fetch_user_groups() called for {email}")
+        logger.debug("_fetch_user_groups() called for %s", email)
 
         # Check cache first
         if isinstance(self._group_cache, cachetools.TTLCache) and isinstance(
@@ -501,22 +538,23 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
             if email in self._group_cache:
                 self._group_cache_stats["hits"] += 1
                 cached_groups = self._group_cache[email]
-                logger.debug(f"Group cache HIT for {email}: {cached_groups}")
+                logger.debug("Group cache HIT for %s: %s", email, cached_groups)
                 return cached_groups
             self._group_cache_stats["misses"] += 1
-            logger.debug(f"Group cache MISS for {email}")
+            logger.debug("Group cache MISS for %s", email)
 
         # Check if we have credentials
         if self.credentials is None:
             logger.warning(
-                f"No credentials available for group fetching - returning empty list for {email}"
+                "No credentials available for group fetching - returning empty list for %s",
+                email,
             )
             return []
 
         try:
             # Run Cloud Identity API call in executor (it's synchronous)
             logger.debug(
-                f"Calling Cloud Identity Groups API to fetch groups for {email}"
+                "Calling Cloud Identity Groups API to fetch groups for %s", email
             )
             loop = asyncio.get_event_loop()
             groups = await loop.run_in_executor(
@@ -527,23 +565,20 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
             )
 
             logger.info(
-                f"Successfully fetched {len(groups)} groups for {email}: {groups}"
+                "Successfully fetched %d groups for %s: %s", len(groups), email, groups
             )
 
             # Cache the result
             if isinstance(self._group_cache, cachetools.TTLCache):
                 self._group_cache[email] = groups
-                logger.debug(f"Cached groups for {email}")
+                logger.debug("Cached groups for %s", email)
 
             return groups
 
-        except Exception as e:
+        except Exception:
             # On any error, return empty list
             # This ensures authentication doesn't fail if group fetching fails
-            logger.error(
-                f"Failed to fetch groups for {email}: {type(e).__name__}: {e}",
-                exc_info=True,
-            )
+            logger.error("Failed to fetch groups for %s", email, exc_info=True)
             return []
 
     def _fetch_groups_sync(
@@ -566,7 +601,7 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
             List of group email addresses
         """
         try:
-            logger.debug(f"_fetch_groups_sync() called for {email}")
+            logger.debug("_fetch_groups_sync() called for %s", email)
 
             # Build the Cloud Identity Groups API service
             logger.debug(
@@ -576,7 +611,7 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
                 "cloudidentity", "v1", credentials=creds
             )
 
-            logger.debug(f"Searching transitive security groups for {email}")
+            logger.debug("Searching transitive security groups for %s", email)
             groups = []
             next_page_token = ""
             service = googleapiclient.discovery.build("cloudidentity", "v1")
@@ -610,16 +645,14 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
                     break
 
             logger.debug(
-                f"Extracted {len(groups)} group emails from Cloud Identity API response"
+                "Extracted %d group emails from Cloud Identity API response",
+                len(groups),
             )
             return groups
 
-        except Exception as e:
+        except Exception:
             # Return empty list on any error
-            logger.error(
-                f"Cloud Identity API call failed for {email}: {type(e).__name__}: {e}",
-                exc_info=True,
-            )
+            logger.error("Cloud Identity API call failed for %s", email, exc_info=True)
             return []
 
     def get_cache_stats(self) -> typing.Dict[str, typing.Any]:
