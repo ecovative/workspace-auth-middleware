@@ -98,7 +98,9 @@ def require_auth(func: typing.Callable) -> typing.Callable:
                 "Ensure your route handler has a 'request' parameter."
             )
 
-        user = getattr(request, "user", None) or getattr(request.scope, "user", None)
+        # Use request.scope.get() to avoid Starlette's user property assertion
+        # which raises AssertionError if AuthenticationMiddleware hasn't set 'user'
+        user = request.scope.get("user")
 
         if (
             user is None
@@ -176,9 +178,8 @@ def require_group(
                     "Ensure your route handler has a 'request' parameter."
                 )
 
-            user = getattr(request, "user", None) or getattr(
-                request.scope, "user", None
-            )
+            # Use request.scope.get() to avoid Starlette's user property assertion
+            user = request.scope.get("user")
 
             # First check if user is authenticated
             if (
@@ -246,9 +247,8 @@ def require_scope(scope: typing.Union[str, typing.List[str]]) -> typing.Callable
                     "Ensure your route handler has a 'request' parameter."
                 )
 
-            auth = getattr(request, "auth", None) or getattr(
-                request.scope, "auth", None
-            )
+            # Use request.scope.get() to avoid Starlette's auth property assertion
+            auth = request.scope.get("auth")
 
             if auth is None:
                 raise PermissionDenied("Authentication required")

@@ -1,6 +1,6 @@
 [project]
 name = "workspace-auth-middleware"
-version = "1.2.0a35"
+version = "1.2.0a36"
 description = "ASGI middlware for authentication against Google Workspace"
 authors = [
     {name = "Neale Petrillo",email = "neale@ecovative.com"}
