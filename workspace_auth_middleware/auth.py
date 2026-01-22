@@ -614,7 +614,6 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
             logger.debug("Searching transitive security groups for %s", email)
             groups = []
             next_page_token = ""
-            service = googleapiclient.discovery.build("cloudidentity", "v1")
             while True:
                 query_params = urllib.parse.urlencode(
                     {
