@@ -11,6 +11,7 @@ Built on top of [Starlette's authentication system](https://www.starlette.io/aut
 - **Group-Based RBAC**: Authorization based on Google Workspace group memberships
 - **High Performance**: Optional caching reduces response time from 100-700ms to <5ms
 - **Flexible Decorators**: Use custom `@require_group()` or Starlette's `@requires()` decorator
+- **First-Class Testing Support**: Built-in mocks and pytest fixtures for testing without Google credentials
 - **Type Hints**: Full type annotations for better IDE support
 - **Async First**: Built for async Python applications
 - **Framework Agnostic**: Works with FastAPI, Starlette, and any ASGI framework
@@ -687,6 +688,92 @@ app.add_middleware(
 )
 ```
 
+## Testing Your Application
+
+The package includes first-class testing support so you can test authentication and authorization in your application without real Google credentials.
+
+### Quick Start with Pytest Fixtures
+
+When `workspace-auth-middleware` is installed, pytest fixtures are automatically available:
+
+```python
+from starlette.testclient import TestClient
+
+def test_protected_route(override_workspace_auth):
+    """Test that authenticated users can access protected routes."""
+    override_workspace_auth(email="user@example.com")
+    app = create_my_app()  # your app that uses WorkspaceAuthMiddleware
+    client = TestClient(app)
+    assert client.get("/protected").status_code == 200
+
+def test_admin_route(override_workspace_auth):
+    """Test group-based authorization."""
+    override_workspace_auth(
+        email="admin@example.com",
+        groups=["admins@example.com"],
+    )
+    app = create_my_app()
+    client = TestClient(app)
+    assert client.get("/admin").status_code == 200
+```
+
+### Using Mock Middleware Directly
+
+For more control, use `MockWorkspaceAuthMiddleware` as a drop-in replacement:
+
+```python
+from workspace_auth_middleware.testing import (
+    MockWorkspaceAuthMiddleware,
+    create_workspace_user,
+)
+
+# Authenticated user
+app.add_middleware(
+    MockWorkspaceAuthMiddleware,
+    user=create_workspace_user(
+        email="dev@example.com",
+        groups=["developers@example.com"],
+    ),
+)
+
+# Error mode (always returns 401)
+app.add_middleware(MockWorkspaceAuthMiddleware, error="Token expired")
+
+# Anonymous (no user)
+app.add_middleware(MockWorkspaceAuthMiddleware)
+```
+
+### Browser/Playwright Testing with Header Mode
+
+For browser tests, use header mode to pass user data via HTTP headers:
+
+```python
+import json
+from workspace_auth_middleware.testing import MockWorkspaceAuthMiddleware
+
+# Configure app with header mode
+app.add_middleware(MockWorkspaceAuthMiddleware, header_mode=True)
+
+# In Playwright tests, set user via header
+page.set_extra_http_headers({
+    "X-Test-User": json.dumps({
+        "email": "admin@example.com",
+        "groups": ["admins@example.com"],
+    })
+})
+page.goto("/dashboard")
+```
+
+### Available Fixtures
+
+| Fixture | Description |
+|---------|-------------|
+| `workspace_user` | Factory to create `WorkspaceUser` instances with sensible defaults |
+| `mock_workspace_backend` | Factory to create `MockWorkspaceAuthBackend` instances |
+| `override_workspace_auth` | Monkeypatch `WorkspaceAuthMiddleware` to use mock backend |
+
+See the [Testing Guide](./docs/TESTING_GUIDE.md) for complete documentation.
+
 ## Error Handling
 
 The middleware handles authentication errors automatically:
@@ -780,7 +867,7 @@ See LICENSE.txt
 - **[docs/SESSION_AUTHENTICATION.md](./docs/SESSION_AUTHENTICATION.md)** - Session-based authentication with OAuth2
 
 ### Testing and Development
-- **[docs/TESTING_GUIDE.md](./docs/TESTING_GUIDE.md)** - Complete guide for testing with real Google credentials
+- **[docs/TESTING_GUIDE.md](./docs/TESTING_GUIDE.md)** - Complete guide for testing (mock utilities, pytest fixtures, and real credentials)
 - **[CLAUDE.md](./CLAUDE.md)** - Development guide for contributors (Claude Code instructions)
 
 ### Examples

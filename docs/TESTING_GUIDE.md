@@ -1,6 +1,197 @@
-# Testing with Real Google Cloud Credentials
+# Testing Guide
 
-Quick guide for testing workspace-auth-middleware with your actual Google Workspace credentials.
+This guide covers two approaches to testing applications that use workspace-auth-middleware:
+
+1. **[Mock Testing](#testing-without-credentials-mock-utilities)** — Test authentication and authorization logic without Google credentials using built-in mock utilities and pytest fixtures
+2. **[Real Credential Testing](#testing-with-real-google-cloud-credentials)** — Test against actual Google Workspace APIs with real credentials
+
+## Testing Without Credentials (Mock Utilities)
+
+The package provides drop-in mock replacements for the real middleware and backend, plus auto-discovered pytest fixtures. No Google credentials or API calls are needed.
+
+### Pytest Fixtures (Recommended)
+
+When `workspace-auth-middleware` is installed, three fixtures are automatically available via the `pytest11` entry point — no imports needed in `conftest.py`:
+
+#### `override_workspace_auth` — Patch the Real Middleware
+
+Monkeypatches `WorkspaceAuthMiddleware.__init__` so that any app created during the test uses a mock backend. Automatically restored after each test.
+
+```python
+from starlette.testclient import TestClient
+
+def test_protected_route(override_workspace_auth):
+    override_workspace_auth(email="user@example.com")
+    app = create_my_app()  # uses WorkspaceAuthMiddleware internally
+    client = TestClient(app)
+    resp = client.get("/protected")
+    assert resp.status_code == 200
+    assert resp.json()["email"] == "user@example.com"
+
+def test_admin_route(override_workspace_auth):
+    override_workspace_auth(
+        email="admin@example.com",
+        groups=["admins@example.com"],
+    )
+    app = create_my_app()
+    client = TestClient(app)
+    assert client.get("/admin").status_code == 200
+
+def test_unauthenticated(override_workspace_auth):
+    override_workspace_auth()  # no user — anonymous
+    app = create_my_app()
+    client = TestClient(app)
+    assert client.get("/protected").json()["authenticated"] is False
+
+def test_auth_error(override_workspace_auth):
+    override_workspace_auth(error="Token expired")
+    app = create_my_app()
+    client = TestClient(app)
+    assert client.get("/protected").status_code == 401
+```
+
+#### `workspace_user` — Create Test Users
+
+Factory fixture that returns `create_workspace_user` for building `WorkspaceUser` instances with sensible defaults:
+
+```python
+def test_user_groups(workspace_user):
+    user = workspace_user(
+        email="dev@corp.com",
+        groups=["developers@corp.com", "team-a@corp.com"],
+    )
+    assert user.has_group("developers@corp.com")
+    assert user.domain == "corp.com"
+```
+
+#### `mock_workspace_backend` — Create Mock Backends
+
+Factory fixture for creating `MockWorkspaceAuthBackend` instances. Useful when integrating with Starlette's `AuthenticationMiddleware` directly:
+
+```python
+from starlette.applications import Starlette
+from starlette.middleware.authentication import AuthenticationMiddleware
+from starlette.testclient import TestClient
+
+def test_with_starlette_middleware(mock_workspace_backend):
+    backend = mock_workspace_backend(
+        email="test@corp.com",
+        groups=["team@corp.com"],
+    )
+    app = Starlette(routes=[...])
+    app.add_middleware(AuthenticationMiddleware, backend=backend)
+    client = TestClient(app)
+    assert client.get("/me").status_code == 200
+```
+
+### Using Mock Classes Directly
+
+For setups that don't use the pytest fixtures, import from `workspace_auth_middleware.testing`:
+
+```python
+from workspace_auth_middleware.testing import (
+    MockWorkspaceAuthMiddleware,
+    MockWorkspaceAuthBackend,
+    create_workspace_user,
+)
+```
+
+#### `MockWorkspaceAuthMiddleware` — Drop-in Replacement
+
+```python
+from fastapi import FastAPI
+from workspace_auth_middleware.testing import (
+    MockWorkspaceAuthMiddleware,
+    create_workspace_user,
+)
+
+app = FastAPI()
+app.add_middleware(
+    MockWorkspaceAuthMiddleware,
+    user=create_workspace_user(
+        email="dev@example.com",
+        groups=["developers@example.com"],
+    ),
+)
+```
+
+Accepts the same keyword arguments as the pytest fixtures:
+
+| Parameter | Description |
+|-----------|-------------|
+| `user` | `WorkspaceUser` instance to return for all requests |
+| `error` | Always raise `AuthenticationError` with this message |
+| `authenticate_fn` | Custom `(conn) -> (AuthCredentials, WorkspaceUser) | None` callback |
+| `header_mode` | If `True`, read user data from a JSON header |
+| `header_name` | Header name for header mode (default: `X-Test-User`) |
+| `on_error` | Custom error handler (default: 401 JSON response) |
+
+#### `create_workspace_user` — User Factory
+
+```python
+from workspace_auth_middleware.testing import create_workspace_user
+
+# All defaults
+user = create_workspace_user()
+# email="user@example.com", user_id="test-user-id", name="Test User"
+# groups=[], domain="example.com"
+
+# Custom values
+admin = create_workspace_user(
+    email="admin@corp.com",
+    groups=["admins@corp.com", "developers@corp.com"],
+)
+```
+
+### Browser/Playwright Testing with Header Mode
+
+For end-to-end tests where a real browser makes requests, use header mode. The mock backend reads user identity from an HTTP header instead of Google tokens:
+
+```python
+import json
+import pytest
+from workspace_auth_middleware.testing import MockWorkspaceAuthMiddleware
+
+@pytest.fixture
+def app():
+    from fastapi import FastAPI, Request
+
+    app = FastAPI()
+    app.add_middleware(MockWorkspaceAuthMiddleware, header_mode=True)
+
+    @app.get("/dashboard")
+    async def dashboard(request: Request):
+        return {"user": request.user.email}
+
+    return app
+
+def test_dashboard(page, live_server):
+    page.set_extra_http_headers({
+        "X-Test-User": json.dumps({
+            "email": "admin@example.com",
+            "groups": ["admins@example.com"],
+        })
+    })
+    page.goto(f"{live_server.url}/dashboard")
+    # assert page content...
+```
+
+Requests without the header are treated as anonymous.
+
+### Scopes Are Auto-Calculated
+
+The mock backend automatically populates `AuthCredentials` scopes from the user's groups, matching the real backend's behavior:
+
+- `"authenticated"` — always present for authenticated users
+- `"group:<group_email>"` — one per group membership
+
+This means Starlette's `@requires("group:admins@example.com")` decorator works correctly with mock users.
+
+---
+
+## Testing with Real Google Cloud Credentials
+
+The following sections cover testing with your actual Google Workspace credentials.
 
 ## Quick Start (5 minutes)
 

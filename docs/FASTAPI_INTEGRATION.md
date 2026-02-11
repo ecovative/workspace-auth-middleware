@@ -984,6 +984,52 @@ async def protected_route(user: WorkspaceUser = Depends(get_current_user)):
     return {"user": user.email}
 ```
 
+### 7. Testing
+
+Use the built-in mock utilities to test without Google credentials:
+
+```python
+from fastapi import FastAPI, Request
+from fastapi.testclient import TestClient
+from workspace_auth_middleware.testing import (
+    MockWorkspaceAuthMiddleware,
+    create_workspace_user,
+)
+from workspace_auth_middleware import require_auth, require_group
+
+app = FastAPI()
+app.add_middleware(
+    MockWorkspaceAuthMiddleware,
+    user=create_workspace_user(
+        email="admin@example.com",
+        groups=["admins@example.com"],
+    ),
+)
+
+@app.get("/admin")
+@require_group("admins@example.com")
+async def admin_route(request: Request):
+    return {"admin": request.user.email}
+
+def test_admin_route():
+    client = TestClient(app)
+    resp = client.get("/admin")
+    assert resp.status_code == 200
+    assert resp.json()["admin"] == "admin@example.com"
+```
+
+Or use the auto-discovered `override_workspace_auth` pytest fixture to patch `WorkspaceAuthMiddleware` in existing app factories:
+
+```python
+def test_with_fixture(override_workspace_auth):
+    override_workspace_auth(email="user@example.com", groups=["team@example.com"])
+    app = create_my_app()  # uses WorkspaceAuthMiddleware internally
+    client = TestClient(app)
+    assert client.get("/protected").status_code == 200
+```
+
+See the [Testing Guide](./TESTING_GUIDE.md) for complete documentation including header mode for Playwright tests.
+
 ## Troubleshooting
 
 ### Problem: 401 Unauthorized on all requests

@@ -736,19 +736,49 @@ app = Starlette(
 
 ### 6. Testing
 
-Use environment variables for configuration:
+Use the built-in mock utilities to test without Google credentials:
 
 ```python
-import os
+from starlette.applications import Starlette
+from starlette.testclient import TestClient
+from workspace_auth_middleware.testing import (
+    MockWorkspaceAuthMiddleware,
+    create_workspace_user,
+)
 
-middleware = [
-    Middleware(
-        WorkspaceAuthMiddleware,
-        client_id=os.getenv("GOOGLE_CLIENT_ID"),
-        required_domains=os.getenv("ALLOWED_DOMAINS", "example.com").split(","),
+def test_protected_route():
+    app = Starlette(routes=[...])
+    app.add_middleware(
+        MockWorkspaceAuthMiddleware,
+        user=create_workspace_user(email="user@example.com"),
     )
-]
+    client = TestClient(app)
+    assert client.get("/protected").status_code == 200
+
+def test_admin_access():
+    app = Starlette(routes=[...])
+    app.add_middleware(
+        MockWorkspaceAuthMiddleware,
+        user=create_workspace_user(
+            email="admin@example.com",
+            groups=["admins@example.com"],
+        ),
+    )
+    client = TestClient(app)
+    assert client.get("/admin").status_code == 200
 ```
+
+Or use the auto-discovered `override_workspace_auth` pytest fixture to patch `WorkspaceAuthMiddleware` in existing app factories:
+
+```python
+def test_with_fixture(override_workspace_auth):
+    override_workspace_auth(email="user@example.com", groups=["team@example.com"])
+    app = create_my_app()  # uses WorkspaceAuthMiddleware internally
+    client = TestClient(app)
+    assert client.get("/protected").status_code == 200
+```
+
+See the [Testing Guide](./TESTING_GUIDE.md) for complete documentation including header mode for Playwright tests.
 
 ## Troubleshooting
 

@@ -297,7 +297,36 @@ async def data_route(request):
 - `is_authenticated`: Always `False`
 - `display_name`: Empty string
 
-### 6. Integration with Authlib (Optional)
+### 6. Testing Utilities
+
+**Location**: [`workspace_auth_middleware/testing.py`](../workspace_auth_middleware/testing.py)
+
+**Purpose**: Provide drop-in mock replacements for the middleware and backend so applications can be tested without Google credentials or API calls.
+
+**Classes**:
+- `MockWorkspaceAuthBackend` - Implements `AuthenticationBackend` with configurable behavior (fixed user, error mode, custom callback, header mode)
+- `MockWorkspaceAuthMiddleware` - Extends `AuthenticationMiddleware`, wraps `MockWorkspaceAuthBackend`
+
+**Functions**:
+- `create_workspace_user()` - Factory function to create `WorkspaceUser` instances with sensible defaults
+
+**Design**:
+- No Google API imports or credentials required
+- Auto-calculates scopes from user groups (matches real backend behavior)
+- Header mode enables browser/Playwright testing by reading user data from an HTTP header
+
+### 7. Pytest Plugin
+
+**Location**: [`workspace_auth_middleware/pytest_plugin.py`](../workspace_auth_middleware/pytest_plugin.py)
+
+**Purpose**: Provide auto-discovered pytest fixtures via the `pytest11` entry point.
+
+**Fixtures**:
+- `workspace_user` - Factory for creating `WorkspaceUser` instances
+- `mock_workspace_backend` - Factory for creating `MockWorkspaceAuthBackend` instances
+- `override_workspace_auth` - Monkeypatches `WorkspaceAuthMiddleware.__init__` to use a mock backend
+
+### 8. Integration with Authlib (Optional)
 
 **What is Authlib?**
 [Authlib](https://docs.authlib.org/) is a comprehensive OAuth/OIDC library that handles the OAuth2 authorization code flow for web applications. It is **NOT** part of `workspace-auth-middleware` but works seamlessly alongside it.
@@ -604,6 +633,26 @@ Route protection decorators.
 - `require_group()` - Decorator requiring group membership
 - `require_scope()` - Decorator requiring specific scopes
 - `_get_request_from_args()` - Helper to extract request from args
+
+### [`workspace_auth_middleware/testing.py`](../workspace_auth_middleware/testing.py)
+
+Test utilities for applications that use the middleware.
+
+**Classes**:
+- `MockWorkspaceAuthBackend` - Mock backend with configurable modes (user, error, callback, header)
+- `MockWorkspaceAuthMiddleware` - Mock middleware wrapping `MockWorkspaceAuthBackend`
+
+**Functions**:
+- `create_workspace_user()` - Factory with defaults for building `WorkspaceUser` instances
+
+### [`workspace_auth_middleware/pytest_plugin.py`](../workspace_auth_middleware/pytest_plugin.py)
+
+Pytest plugin registered via `pytest11` entry point.
+
+**Fixtures**:
+- `workspace_user` - Factory fixture returning `create_workspace_user`
+- `mock_workspace_backend` - Factory fixture for `MockWorkspaceAuthBackend`
+- `override_workspace_auth` - Monkeypatch fixture for `WorkspaceAuthMiddleware`
 
 ## Extension Points
 

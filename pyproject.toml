@@ -17,6 +17,9 @@ dependencies = [
     "authlib (>=1.6.5,<2.0.0)"
 ]
 
+[project.entry-points."pytest11"]
+workspace_auth = "workspace_auth_middleware.pytest_plugin"
+
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"

@@ -304,10 +304,13 @@ poetry run licensecheck -0 --ignore-licenses "MPL 2.0"
   - `auth.py` - WorkspaceAuthBackend with token validation and caching
   - `models.py` - WorkspaceUser and AnonymousUser models
   - `decorators.py` - Route protection decorators (@require_auth, @require_group, @require_scope)
+  - `testing.py` - Mock backend/middleware and user factory for testing without credentials
+  - `pytest_plugin.py` - Pytest plugin with auto-discovered fixtures (registered via pytest11 entry point)
 - `tests/` - Comprehensive test suite
   - `test_auth_backend.py` - Authentication backend tests
   - `test_decorators.py` - Decorator functionality tests
   - `test_middleware.py` - Middleware integration tests
+  - `test_testing.py` - Tests for mock testing utilities and pytest plugin fixtures
   - `test_integration_adc.py` - Integration tests with real Google credentials
   - `test_performance.py` - Performance benchmarking tests
   - `conftest.py` - Shared pytest fixtures
