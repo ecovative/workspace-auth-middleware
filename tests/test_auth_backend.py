@@ -6,7 +6,7 @@ import hashlib
 import urllib.parse
 
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, MagicMock, patch
 from starlette.authentication import AuthenticationError
 from starlette.requests import HTTPConnection
 
@@ -274,6 +274,31 @@ class TestGroupFetching:
         mock_cloud_identity_service.groups().memberships().searchTransitiveGroups.assert_called()
 
         assert groups == sample_groups
+
+    @patch("googleapiclient.discovery.build")
+    async def test_service_built_once_and_reused(
+        self,
+        mock_build,
+        client_id,
+        mock_google_credentials,
+        mock_cloud_identity_service,
+        sample_groups,
+    ):
+        """Test that discovery.build is called once and the service is reused."""
+        mock_build.return_value = mock_cloud_identity_service
+
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            credentials=mock_google_credentials,
+            fetch_groups=True,
+            enable_group_cache=False,
+        )
+
+        await backend._fetch_user_groups("user1@example.com")
+        await backend._fetch_user_groups("user2@example.com")
+
+        # discovery.build should only be called once
+        mock_build.assert_called_once()
 
     @patch("googleapiclient.discovery.build")
     async def test_fetch_groups_api_error(
@@ -547,3 +572,466 @@ class TestEmailValidation:
             groups = await backend._fetch_user_groups("user@example.com")
             # Should not be empty (validation passed, mock returns groups)
             assert len(groups) > 0
+
+
+@pytest.mark.asyncio
+class TestSessionAuthentication:
+    """Tests for session-based authentication."""
+
+    async def test_session_auth_valid_user(self, client_id, required_domains):
+        """Test session auth succeeds with valid session data."""
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            required_domains=required_domains,
+            fetch_groups=False,
+            enable_session_auth=True,
+        )
+
+        conn = Mock(spec=HTTPConnection)
+        conn.headers = {}  # No Authorization header
+        conn.session = {
+            "user": {
+                "email": "user@example.com",
+                "user_id": "12345",
+                "name": "Test User",
+                "domain": "example.com",
+                "groups": ["admins@example.com"],
+            }
+        }
+
+        result = await backend.authenticate(conn)
+        assert result is not None
+        credentials, user = result
+        assert user.email == "user@example.com"
+        assert user.user_id == "12345"
+        assert user.groups == ["admins@example.com"]
+        assert "authenticated" in credentials.scopes
+        assert "group:admins@example.com" in credentials.scopes
+
+    async def test_session_auth_missing_email(self, client_id):
+        """Test session auth returns None when email is missing."""
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            fetch_groups=False,
+            enable_session_auth=True,
+        )
+
+        conn = Mock(spec=HTTPConnection)
+        conn.headers = {}
+        conn.session = {"user": {"user_id": "12345"}}
+
+        result = await backend.authenticate(conn)
+        assert result is None
+
+    async def test_session_auth_missing_user_id(self, client_id):
+        """Test session auth returns None when user_id is missing."""
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            fetch_groups=False,
+            enable_session_auth=True,
+        )
+
+        conn = Mock(spec=HTTPConnection)
+        conn.headers = {}
+        conn.session = {"user": {"email": "user@example.com"}}
+
+        result = await backend.authenticate(conn)
+        assert result is None
+
+    async def test_session_auth_wrong_domain(self, client_id):
+        """Test session auth rejects users from wrong domain."""
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            required_domains=["allowed.com"],
+            fetch_groups=False,
+            enable_session_auth=True,
+        )
+
+        conn = Mock(spec=HTTPConnection)
+        conn.headers = {}
+        conn.session = {
+            "user": {
+                "email": "user@other.com",
+                "user_id": "12345",
+            }
+        }
+
+        result = await backend.authenticate(conn)
+        assert result is None
+
+    async def test_session_auth_disabled(self, client_id):
+        """Test that session auth is skipped when disabled."""
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            fetch_groups=False,
+            enable_session_auth=False,
+        )
+
+        conn = Mock(spec=HTTPConnection)
+        conn.headers = {}
+        conn.session = {
+            "user": {
+                "email": "user@example.com",
+                "user_id": "12345",
+            }
+        }
+
+        # Should return None (anonymous) — session not checked
+        result = await backend.authenticate(conn)
+        assert result is None
+
+    async def test_session_auth_no_session_middleware(self, client_id):
+        """Test graceful handling when SessionMiddleware is not installed."""
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            fetch_groups=False,
+            enable_session_auth=True,
+        )
+
+        conn = Mock(spec=HTTPConnection)
+        conn.headers = {}
+        # Starlette raises AssertionError when session is accessed without SessionMiddleware
+        type(conn).session = property(
+            lambda self: (_ for _ in ()).throw(
+                AssertionError("SessionMiddleware not installed")
+            )
+        )
+
+        result = await backend.authenticate(conn)
+        assert result is None
+
+    async def test_session_auth_non_dict_groups(self, client_id):
+        """Test session auth handles non-list groups gracefully."""
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            fetch_groups=False,
+            enable_session_auth=True,
+        )
+
+        conn = Mock(spec=HTTPConnection)
+        conn.headers = {}
+        conn.session = {
+            "user": {
+                "email": "user@example.com",
+                "user_id": "12345",
+                "groups": "not-a-list",
+            }
+        }
+
+        result = await backend.authenticate(conn)
+        assert result is not None
+        _, user = result
+        assert user.groups == []
+
+    @patch("google.oauth2.id_token.verify_oauth2_token")
+    async def test_session_takes_priority_over_bearer(
+        self,
+        mock_verify,
+        client_id,
+        required_domains,
+        valid_id_token_claims,
+        mock_id_token,
+    ):
+        """Test that session auth is tried before bearer token when both are present."""
+        mock_verify.return_value = valid_id_token_claims
+
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            required_domains=required_domains,
+            fetch_groups=False,
+            enable_session_auth=True,
+        )
+
+        conn = Mock(spec=HTTPConnection)
+        conn.headers = {"authorization": f"Bearer {mock_id_token}"}
+        conn.session = {
+            "user": {
+                "email": "session-user@example.com",
+                "user_id": "session-id",
+            }
+        }
+
+        credentials, user = await backend.authenticate(conn)
+        # Session user should win
+        assert user.email == "session-user@example.com"
+        # Bearer token should NOT have been verified
+        mock_verify.assert_not_called()
+
+
+@pytest.mark.asyncio
+class TestCacheBehavior:
+    """Tests for cache stats, invalidation, and disabled cache behavior."""
+
+    @patch("google.oauth2.id_token.verify_oauth2_token")
+    async def test_cache_stats_track_hits_and_misses(
+        self,
+        mock_verify,
+        client_id,
+        required_domains,
+        valid_id_token_claims,
+        mock_id_token,
+    ):
+        """Test that get_cache_stats accurately reports hits and misses."""
+        mock_verify.return_value = valid_id_token_claims
+
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            required_domains=required_domains,
+            fetch_groups=False,
+            enable_token_cache=True,
+        )
+
+        conn = Mock(spec=HTTPConnection)
+        conn.headers = {"authorization": f"Bearer {mock_id_token}"}
+
+        # First call: cache miss
+        await backend.authenticate(conn)
+        # Second call: cache hit
+        await backend.authenticate(conn)
+
+        stats = backend.get_cache_stats()
+        assert stats["token_cache"]["hits"] == 1
+        assert stats["token_cache"]["misses"] == 1
+        assert stats["token_cache"]["hit_rate"] == 0.5
+        assert stats["token_cache"]["size"] == 1
+
+    @patch("google.oauth2.id_token.verify_oauth2_token")
+    async def test_clear_caches_resets_stats(
+        self,
+        mock_verify,
+        client_id,
+        required_domains,
+        valid_id_token_claims,
+        mock_id_token,
+    ):
+        """Test that clear_caches empties cache and resets stats."""
+        mock_verify.return_value = valid_id_token_claims
+
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            required_domains=required_domains,
+            fetch_groups=False,
+            enable_token_cache=True,
+        )
+
+        conn = Mock(spec=HTTPConnection)
+        conn.headers = {"authorization": f"Bearer {mock_id_token}"}
+
+        await backend.authenticate(conn)
+        assert len(backend._token_cache) == 1
+
+        backend.clear_caches()
+
+        stats = backend.get_cache_stats()
+        assert stats["token_cache"]["hits"] == 0
+        assert stats["token_cache"]["misses"] == 0
+        assert stats["token_cache"]["size"] == 0
+
+    def test_cache_disabled_stats(self, client_id):
+        """Test stats report disabled when caches are off."""
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            fetch_groups=False,
+            enable_token_cache=False,
+            enable_group_cache=False,
+        )
+
+        stats = backend.get_cache_stats()
+        assert stats["token_cache"] == {"enabled": False}
+        assert stats["group_cache"] == {"enabled": False}
+
+    def test_invalidate_nonexistent_token(self, client_id):
+        """Test invalidating a token not in cache returns False."""
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            fetch_groups=False,
+            enable_token_cache=True,
+        )
+
+        result = backend.invalidate_token("nonexistent-token")
+        assert result is False
+
+    def test_invalidate_nonexistent_user_groups(self, client_id):
+        """Test invalidating groups for a user not in cache returns False."""
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            fetch_groups=False,
+            enable_group_cache=True,
+        )
+
+        result = backend.invalidate_user_groups("nobody@example.com")
+        assert result is False
+
+    @patch("googleapiclient.discovery.build")
+    async def test_group_cache_hit(
+        self,
+        mock_build,
+        client_id,
+        mock_google_credentials,
+        mock_cloud_identity_service,
+        sample_groups,
+    ):
+        """Test that group cache returns cached results on second call."""
+        mock_build.return_value = mock_cloud_identity_service
+
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            credentials=mock_google_credentials,
+            fetch_groups=True,
+            enable_group_cache=True,
+        )
+
+        # First call: cache miss, hits API
+        groups1 = await backend._fetch_user_groups("user@example.com")
+        # Second call: cache hit, no API call
+        groups2 = await backend._fetch_user_groups("user@example.com")
+
+        assert groups1 == sample_groups
+        assert groups2 == sample_groups
+
+        stats = backend.get_cache_stats()
+        assert stats["group_cache"]["hits"] == 1
+        assert stats["group_cache"]["misses"] == 1
+
+    @patch("googleapiclient.discovery.build")
+    async def test_invalidate_user_groups_removes_entry(
+        self,
+        mock_build,
+        client_id,
+        mock_google_credentials,
+        mock_cloud_identity_service,
+    ):
+        """Test that invalidate_user_groups removes the cached entry."""
+        mock_build.return_value = mock_cloud_identity_service
+
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            credentials=mock_google_credentials,
+            fetch_groups=True,
+            enable_group_cache=True,
+        )
+
+        await backend._fetch_user_groups("user@example.com")
+        assert backend.invalidate_user_groups("user@example.com") is True
+        assert backend.invalidate_user_groups("user@example.com") is False
+
+
+@pytest.mark.asyncio
+class TestMultiClientIdFallback:
+    """Tests for multi-client-ID authentication fallback."""
+
+    @patch("google.oauth2.id_token.verify_oauth2_token")
+    async def test_second_client_id_succeeds(
+        self, mock_verify, required_domains, valid_id_token_claims, mock_id_token
+    ):
+        """Test that auth succeeds when first client_id fails but second succeeds."""
+
+        def verify_side_effect(token, request, audience):
+            if audience == "wrong-id":
+                raise ValueError("Token audience mismatch")
+            return valid_id_token_claims
+
+        mock_verify.side_effect = verify_side_effect
+
+        backend = WorkspaceAuthBackend(
+            client_id=["wrong-id", "test-client-id.apps.googleusercontent.com"],
+            required_domains=required_domains,
+            fetch_groups=False,
+        )
+
+        conn = Mock(spec=HTTPConnection)
+        conn.headers = {"authorization": f"Bearer {mock_id_token}"}
+
+        credentials, user = await backend.authenticate(conn)
+        assert user.email == "user@example.com"
+        assert mock_verify.call_count == 2
+
+    @patch("google.oauth2.id_token.verify_oauth2_token")
+    async def test_all_client_ids_fail(self, mock_verify, mock_id_token):
+        """Test that auth fails when all client_ids reject the token."""
+        mock_verify.side_effect = ValueError("Token audience mismatch")
+
+        backend = WorkspaceAuthBackend(
+            client_id=["bad-id-1", "bad-id-2"],
+            fetch_groups=False,
+        )
+
+        conn = Mock(spec=HTTPConnection)
+        conn.headers = {"authorization": f"Bearer {mock_id_token}"}
+
+        with pytest.raises(AuthenticationError, match="Token verification failed"):
+            await backend.authenticate(conn)
+
+        assert mock_verify.call_count == 2
+
+
+@pytest.mark.asyncio
+class TestPaginatedGroupResponses:
+    """Tests for paginated Cloud Identity API responses."""
+
+    @patch("googleapiclient.discovery.build")
+    async def test_paginated_groups_are_collected(
+        self, mock_build, client_id, mock_google_credentials
+    ):
+        """Test that all groups are fetched across multiple pages."""
+        service = MagicMock()
+
+        # Page 1: returns groups + nextPageToken
+        page1_response = {
+            "memberships": [
+                {"groupKey": {"id": "group-a@example.com"}},
+                {"groupKey": {"id": "group-b@example.com"}},
+            ],
+            "nextPageToken": "page2token",
+        }
+        # Page 2: returns more groups, no nextPageToken
+        page2_response = {
+            "memberships": [
+                {"groupKey": {"id": "group-c@example.com"}},
+            ],
+        }
+
+        execute_mock = MagicMock(side_effect=[page1_response, page2_response])
+        service.groups.return_value.memberships.return_value.searchTransitiveGroups.return_value.execute = execute_mock
+        mock_build.return_value = service
+
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            credentials=mock_google_credentials,
+            fetch_groups=True,
+            enable_group_cache=False,
+        )
+
+        groups = await backend._fetch_user_groups("user@example.com")
+
+        assert groups == [
+            "group-a@example.com",
+            "group-b@example.com",
+            "group-c@example.com",
+        ]
+        assert execute_mock.call_count == 2
+
+
+@pytest.mark.asyncio
+class TestEmptyBearerToken:
+    """Tests for edge cases in Authorization header parsing."""
+
+    async def test_bearer_with_empty_token(self, client_id):
+        """Test that 'Authorization: Bearer ' with empty token fails gracefully."""
+        backend = WorkspaceAuthBackend(client_id=client_id, fetch_groups=False)
+
+        conn = Mock(spec=HTTPConnection)
+        conn.headers = {"authorization": "Bearer "}
+
+        with pytest.raises(AuthenticationError):
+            await backend.authenticate(conn)
+
+    async def test_bearer_with_no_space(self, client_id):
+        """Test that 'Authorization: Bearer' with no token fails gracefully."""
+        backend = WorkspaceAuthBackend(client_id=client_id, fetch_groups=False)
+
+        conn = Mock(spec=HTTPConnection)
+        conn.headers = {"authorization": "Bearer"}
+
+        with pytest.raises(AuthenticationError):
+            await backend.authenticate(conn)

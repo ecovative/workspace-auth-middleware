@@ -23,11 +23,8 @@ import cachetools
 
 from .models import WorkspaceUser
 
-# Module-level logger - can be reconfigured by parent application
-logger = logging.getLogger("workspace_auth_middleware")
-logger.propagate = True
-logger.setLevel(logging.DEBUG)
-logger.handlers = []
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 _SENTINEL = object()
 _EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
@@ -252,6 +249,9 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
         else:
             self._group_cache = None
             self._group_cache_stats = None
+
+        # Lazily-built Cloud Identity API service (reused across group fetches)
+        self._cloud_identity_service: typing.Any = None
 
         # Use provided credentials or fallback to default application credentials
         self.credentials: typing.Optional[google.auth.credentials.Credentials]
@@ -653,13 +653,15 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
         try:
             logger.debug("_fetch_groups_sync() called for %s", email)
 
-            # Build the Cloud Identity Groups API service
-            logger.debug(
-                "Building Cloud Identity Groups API service (cloudidentity/v1)"
-            )
-            service = googleapiclient.discovery.build(
-                "cloudidentity", "v1", credentials=creds
-            )
+            # Build the Cloud Identity API service once, then reuse
+            if self._cloud_identity_service is None:
+                logger.debug(
+                    "Building Cloud Identity Groups API service (cloudidentity/v1)"
+                )
+                self._cloud_identity_service = googleapiclient.discovery.build(
+                    "cloudidentity", "v1", credentials=creds
+                )
+            service = self._cloud_identity_service
 
             logger.debug("Searching transitive security groups for %s", email)
             groups = []
