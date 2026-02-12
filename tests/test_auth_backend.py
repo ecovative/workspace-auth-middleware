@@ -2,6 +2,7 @@
 Tests for WorkspaceAuthBackend authentication functionality.
 """
 
+import hashlib
 import urllib.parse
 
 import pytest
@@ -154,7 +155,7 @@ class TestWorkspaceAuthBackend:
         conn = Mock(spec=HTTPConnection)
         conn.headers = {"authorization": f"Bearer {mock_id_token}"}
 
-        with pytest.raises(AuthenticationError, match="not in allowed domains"):
+        with pytest.raises(AuthenticationError, match="Domain not allowed"):
             await backend.authenticate(conn)
 
     @patch("google.oauth2.id_token.verify_oauth2_token")
@@ -443,3 +444,106 @@ class TestCustomerId:
         """Test that customer_id defaults to None."""
         backend = WorkspaceAuthBackend(client_id=client_id, fetch_groups=False)
         assert backend.customer_id is None
+
+
+@pytest.mark.asyncio
+class TestTokenCacheHashing:
+    """Tests for token cache key hashing (Item 5: avoid storing raw JWTs)."""
+
+    @patch("google.oauth2.id_token.verify_oauth2_token")
+    async def test_cache_keys_are_hashed(
+        self,
+        mock_verify,
+        client_id,
+        required_domains,
+        valid_id_token_claims,
+        mock_id_token,
+    ):
+        """Test that token cache keys are SHA-256 hashes, not raw tokens."""
+        mock_verify.return_value = valid_id_token_claims
+
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            required_domains=required_domains,
+            fetch_groups=False,
+            enable_token_cache=True,
+        )
+
+        conn = Mock(spec=HTTPConnection)
+        conn.headers = {"authorization": f"Bearer {mock_id_token}"}
+
+        await backend.authenticate(conn)
+
+        # The raw token must NOT be a cache key
+        assert mock_id_token not in backend._token_cache
+
+        # The SHA-256 hash of the token MUST be the cache key
+        expected_key = hashlib.sha256(mock_id_token.encode()).hexdigest()
+        assert expected_key in backend._token_cache
+
+    @patch("google.oauth2.id_token.verify_oauth2_token")
+    async def test_invalidate_token_uses_hash(
+        self,
+        mock_verify,
+        client_id,
+        required_domains,
+        valid_id_token_claims,
+        mock_id_token,
+    ):
+        """Test that invalidate_token hashes the token before lookup."""
+        mock_verify.return_value = valid_id_token_claims
+
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            required_domains=required_domains,
+            fetch_groups=False,
+            enable_token_cache=True,
+        )
+
+        conn = Mock(spec=HTTPConnection)
+        conn.headers = {"authorization": f"Bearer {mock_id_token}"}
+
+        await backend.authenticate(conn)
+        assert len(backend._token_cache) == 1
+
+        result = backend.invalidate_token(mock_id_token)
+        assert result is True
+        assert len(backend._token_cache) == 0
+
+
+@pytest.mark.asyncio
+class TestEmailValidation:
+    """Tests for email validation before Cloud Identity query (Item 6)."""
+
+    async def test_invalid_email_returns_empty_groups(
+        self, client_id, mock_google_credentials
+    ):
+        """Test that an email with injection characters returns empty groups."""
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            credentials=mock_google_credentials,
+            fetch_groups=True,
+        )
+
+        # Email with single-quote injection attempt
+        groups = backend._fetch_groups_sync(
+            mock_google_credentials, "user'@example.com"
+        )
+        assert groups == []
+
+    async def test_valid_email_is_not_rejected(
+        self, client_id, mock_google_credentials, mock_cloud_identity_service
+    ):
+        """Test that a normal email passes validation."""
+        with patch("googleapiclient.discovery.build") as mock_build:
+            mock_build.return_value = mock_cloud_identity_service
+
+            backend = WorkspaceAuthBackend(
+                client_id=client_id,
+                credentials=mock_google_credentials,
+                fetch_groups=True,
+            )
+
+            groups = await backend._fetch_user_groups("user@example.com")
+            # Should not be empty (validation passed, mock returns groups)
+            assert len(groups) > 0

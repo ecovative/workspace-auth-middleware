@@ -6,7 +6,9 @@ validating Google OAuth2 ID tokens and extracting Google Workspace group members
 """
 
 import asyncio
+import hashlib
 import logging
+import re
 import typing
 import urllib.parse
 
@@ -28,6 +30,13 @@ logger.setLevel(logging.DEBUG)
 logger.handlers = []
 
 _SENTINEL = object()
+_EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
+
+
+def _hash_token(token: str) -> str:
+    """Hash a token for use as a cache key to avoid storing raw JWTs in memory."""
+    return hashlib.sha256(token.encode()).hexdigest()
+
 
 __all__ = [
     "WorkspaceAuthBackend",
@@ -97,7 +106,7 @@ def _authenticate_from_session(
         )
         groups = []
 
-    logger.info(
+    logger.debug(
         "Session auth successful for %s with %d groups: %s", email, len(groups), groups
     )
 
@@ -304,7 +313,7 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
             try:
                 session_result = _authenticate_from_session(conn, self.required_domains)
                 if session_result is not None:
-                    logger.info(
+                    logger.debug(
                         "Successfully authenticated via session: %s",
                         session_result[1].email,
                     )
@@ -382,7 +391,7 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
                     self.required_domains,
                 )
                 raise starlette.authentication.AuthenticationError(
-                    f"User domain '{domain}' not in allowed domains: {', '.join(self.required_domains)}"
+                    f"Domain not allowed: {domain}"
                 )
 
             # Fetch user's groups (placeholder - implement with Admin SDK)
@@ -392,7 +401,7 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
                     "fetch_groups=True, attempting to fetch groups for %s", email
                 )
                 groups = await self._fetch_user_groups(email)
-                logger.info("Fetched %d groups for %s: %s", len(groups), email, groups)
+                logger.debug("Fetched %d groups for %s: %s", len(groups), email, groups)
             else:
                 logger.debug("fetch_groups=False, skipping group fetching")
 
@@ -412,7 +421,7 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
                 # Add group scopes for Starlette's @requires decorator
                 scopes.extend([f"group:{group}" for group in groups])
 
-            logger.info(
+            logger.debug(
                 "Successfully authenticated %s with %d scopes: %s",
                 email,
                 len(scopes),
@@ -511,7 +520,7 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
         if isinstance(self._token_cache, cachetools.TTLCache) and isinstance(
             self._token_cache_stats, dict
         ):
-            cached = self._token_cache.get(token, _SENTINEL)
+            cached = self._token_cache.get(_hash_token(token), _SENTINEL)
             if cached is not _SENTINEL:
                 self._token_cache_stats["hits"] += 1
                 logger.debug("Token cache HIT for %s", token_preview)
@@ -527,7 +536,7 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
 
             # Cache the result
             if isinstance(self._token_cache, cachetools.TTLCache):
-                self._token_cache[token] = idinfo
+                self._token_cache[_hash_token(token)] = idinfo
                 logger.debug("Cached token for %s", idinfo.get("email"))
 
             return idinfo
@@ -601,7 +610,7 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
                 email,
             )
 
-            logger.info(
+            logger.debug(
                 "Successfully fetched %d groups for %s: %s", len(groups), email, groups
             )
 
@@ -637,6 +646,10 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
         Returns:
             List of group email addresses
         """
+        if not _EMAIL_RE.match(email):
+            logger.warning("Invalid email format, skipping group fetch: %s", email)
+            return []
+
         try:
             logger.debug("_fetch_groups_sync() called for %s", email)
 
@@ -786,5 +799,5 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
             True if the token was cached and removed, False otherwise
         """
         if isinstance(self._token_cache, cachetools.TTLCache):
-            return self._token_cache.pop(token, _SENTINEL) is not _SENTINEL
+            return self._token_cache.pop(_hash_token(token), _SENTINEL) is not _SENTINEL
         return False
