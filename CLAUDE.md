@@ -54,13 +54,21 @@ Scopes are automatically populated:
 ### Integration with Frameworks
 
 **Option 1: Use convenience wrapper**
+
+The `WorkspaceAuthMiddleware` wrapper forwards all parameters to `WorkspaceAuthBackend`, including
+`client_id` (accepts `str` or `List[str]` for multi-client validation), all cache parameters, and
+`enable_session_auth`.
+
 ```python
 from workspace_auth_middleware import WorkspaceAuthMiddleware
 
 app.add_middleware(
     WorkspaceAuthMiddleware,
-    client_id="...",
+    client_id="...",  # or ["client-1", "client-2"] for multi-client
     required_domains=["example.com"],
+    enable_token_cache=True,
+    token_cache_ttl=300,
+    enable_session_auth=True,
 )
 ```
 
@@ -75,17 +83,33 @@ app.add_middleware(AuthenticationMiddleware, backend=backend)
 
 ### Decorator Patterns
 
-Two approaches for route protection:
+Three approaches for route protection:
 
 **1. Custom decorators (Google Workspace-specific)**
 ```python
-from workspace_auth_middleware import require_auth, require_group
+from workspace_auth_middleware import require_auth, require_group, require_scope
 
 @require_auth
 async def protected_route(request): ...
 
 @require_group("admins@example.com")
 async def admin_route(request): ...
+
+# Multiple groups — OR logic (default)
+@require_group(["team-a@example.com", "team-b@example.com"])
+async def team_route(request): ...
+
+# Multiple groups — AND logic
+@require_group(["managers@example.com", "leads@example.com"], require_all=True)
+async def restricted_route(request): ...
+
+# Scope-based — all scopes required (default)
+@require_scope(["authenticated", "group:admins@example.com"])
+async def admin_scope_route(request): ...
+
+# Scope-based — any scope sufficient
+@require_scope(["group:team-a@example.com", "group:team-b@example.com"], require_all=False)
+async def flexible_route(request): ...
 ```
 
 **2. Starlette's scope-based decorator**
@@ -341,7 +365,6 @@ poetry run licensecheck -0 --ignore-licenses "MPL 2.0"
 - `starlette` (>=0.27.0, <1.0.0) - ASGI framework providing authentication interfaces
 - `google-api-python-client` (>=2.0.0, <3.0.0) - Required for group fetching via Admin SDK
 - `cachetools` (>=5.0.0, <7.0.0) - TTL-based caching for performance optimization
-- `requests` (>=2.32.5, <3.0.0) - HTTP library for API calls
 - Python 3.12+ required
 
 ### Development Dependencies
@@ -354,6 +377,7 @@ poetry run licensecheck -0 --ignore-licenses "MPL 2.0"
 - `pre-commit` - Git hook management
 - `uvicorn` - ASGI server for testing
 - `fastapi` - For example applications
+- `authlib` - OAuth2 client library (used in examples only)
 
 ## Pre-commit Hooks
 

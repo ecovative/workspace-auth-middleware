@@ -11,17 +11,30 @@ Caching is enabled by default and dramatically reduces latency by avoiding repea
 
 ## Configuration
 
+All cache parameters are accepted by both `WorkspaceAuthBackend` and `WorkspaceAuthMiddleware`:
+
 ```python
+# Via backend directly
 backend = WorkspaceAuthBackend(
     client_id="...",
-    # Token cache (default: enabled)
     enable_token_cache=True,
     token_cache_ttl=300,        # seconds (default: 5 minutes)
     token_cache_maxsize=1000,   # max entries (default: 1000)
-    # Group cache (default: enabled)
     enable_group_cache=True,
     group_cache_ttl=300,        # seconds (default: 5 minutes)
     group_cache_maxsize=500,    # max entries (default: 500)
+)
+
+# Via convenience middleware (forwards to backend)
+app.add_middleware(
+    WorkspaceAuthMiddleware,
+    client_id="...",
+    enable_token_cache=True,
+    token_cache_ttl=300,
+    token_cache_maxsize=1000,
+    enable_group_cache=True,
+    group_cache_ttl=300,
+    group_cache_maxsize=500,
 )
 ```
 

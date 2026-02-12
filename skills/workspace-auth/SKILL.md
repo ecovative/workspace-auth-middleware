@@ -1,6 +1,6 @@
 ---
 name: workspace-auth
-description: "Integrate Google Workspace authentication and group-based authorization into ASGI applications using workspace-auth-middleware. Use when the user asks to: (1) Add Google Workspace authentication to a FastAPI or Starlette app, (2) Protect routes with @require_auth, @require_group, or @requires decorators, (3) Set up group-based RBAC with Google Workspace groups, (4) Write tests for authenticated/authorized routes using mock utilities, (5) Configure session-based auth with Authlib and OAuth2, (6) Set up caching for token verification and group fetching."
+description: "Integrate Google Workspace authentication and group-based authorization into ASGI applications using workspace-auth-middleware. Use when the user asks to: (1) Add Google Workspace authentication to a FastAPI or Starlette app, (2) Protect routes with @require_auth, @require_group, @require_scope, or @requires decorators, (3) Set up group-based or scope-based RBAC with Google Workspace groups, (4) Write tests for authenticated/authorized routes using mock utilities, (5) Configure session-based auth with Authlib and OAuth2, (6) Set up caching for token verification and group fetching."
 ---
 
 # workspace-auth-middleware
@@ -30,9 +30,12 @@ from workspace_auth_middleware import WorkspaceAuthMiddleware
 app = FastAPI()
 app.add_middleware(
     WorkspaceAuthMiddleware,
-    client_id="your-client-id.apps.googleusercontent.com",
+    client_id="your-client-id.apps.googleusercontent.com",  # also accepts a list for multi-client
     required_domains=["example.com"],
     fetch_groups=True,
+    # All backend params are supported: enable_token_cache, token_cache_ttl,
+    # token_cache_maxsize, enable_group_cache, group_cache_ttl,
+    # group_cache_maxsize, enable_session_auth, customer_id, credentials
 )
 ```
 
@@ -68,10 +71,10 @@ app.add_middleware(AuthenticationMiddleware, backend=backend)
 
 ### 3. Protect routes
 
-Three decorator approaches (pick one per route):
+Four decorator approaches (pick one per route):
 
 ```python
-from workspace_auth_middleware import require_auth, require_group, requires
+from workspace_auth_middleware import require_auth, require_group, require_scope, requires
 
 # Require authentication
 @require_auth
@@ -90,6 +93,18 @@ async def team(request): ...
 # Multiple groups — AND logic
 @require_group(["managers@example.com", "leads@example.com"], require_all=True)
 async def restricted(request): ...
+
+# Require scopes — ALL required by default
+@require_scope("authenticated")
+async def scoped(request): ...
+
+# Multiple scopes — AND logic (default)
+@require_scope(["authenticated", "group:admins@example.com"])
+async def admin_scoped(request): ...
+
+# Multiple scopes — OR logic
+@require_scope(["group:team-a@example.com", "group:team-b@example.com"], require_all=False)
+async def any_team(request): ...
 
 # Starlette scope-based (auto-populated by backend)
 @requires("authenticated")
@@ -203,7 +218,8 @@ Requests without the header are anonymous.
 
 ## Key Architecture Notes
 
-- `WorkspaceAuthMiddleware` extends Starlette's `AuthenticationMiddleware`
+- `WorkspaceAuthMiddleware` extends Starlette's `AuthenticationMiddleware` and forwards all params to `WorkspaceAuthBackend`
+- `client_id` accepts `str` or `List[str]` (multi-client fallback validation)
 - `WorkspaceAuthBackend` implements Starlette's `AuthenticationBackend`
 - `WorkspaceUser` extends Starlette's `BaseUser`
 - Scopes are auto-populated: `"authenticated"` + `"group:<email>"` per group
