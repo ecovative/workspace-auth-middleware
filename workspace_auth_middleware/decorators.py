@@ -33,6 +33,7 @@ import typing
 import inspect
 
 import starlette.authentication
+import starlette.exceptions
 
 __all__ = [
     "PermissionDenied",
@@ -42,18 +43,21 @@ __all__ = [
 ]
 
 
-class PermissionDenied(Exception):
+class PermissionDenied(starlette.exceptions.HTTPException):
     """
     Raised when a user doesn't have required permissions.
 
-    This exception can be caught and handled in your application to return
-    custom error responses.
+    Returns a 403 Forbidden response. Starlette and FastAPI have built-in
+    handlers for HTTPException, so this is handled automatically.
     """
 
-    pass
+    def __init__(self, detail: str = "Permission denied"):
+        super().__init__(status_code=403, detail=detail)
 
 
-def require_auth(func: typing.Callable) -> typing.Callable:
+def require_auth(
+    func: typing.Callable[..., typing.Any],
+) -> typing.Callable[..., typing.Any]:
     """
     Decorator that requires a user to be authenticated.
 
@@ -88,7 +92,7 @@ def require_auth(func: typing.Callable) -> typing.Callable:
     """
 
     @functools.wraps(func)
-    async def wrapper(*args, **kwargs):
+    async def wrapper(*args: typing.Any, **kwargs: typing.Any) -> typing.Any:
         # Find the request object in args or kwargs
         request = _get_request_from_args(args, kwargs)
 
@@ -120,7 +124,7 @@ def require_auth(func: typing.Callable) -> typing.Callable:
 
 def require_group(
     group: typing.Union[str, typing.List[str]], require_all: bool = False
-) -> typing.Callable:
+) -> typing.Callable[..., typing.Any]:
     """
     Decorator that requires a user to belong to specific Google Workspace group(s).
 
@@ -166,9 +170,11 @@ def require_group(
         ```
     """
 
-    def decorator(func: typing.Callable) -> typing.Callable:
+    def decorator(
+        func: typing.Callable[..., typing.Any],
+    ) -> typing.Callable[..., typing.Any]:
         @functools.wraps(func)
-        async def wrapper(*args, **kwargs):
+        async def wrapper(*args: typing.Any, **kwargs: typing.Any) -> typing.Any:
             # Find the request object
             request = _get_request_from_args(args, kwargs)
 
@@ -214,7 +220,9 @@ def require_group(
     return decorator
 
 
-def require_scope(scope: typing.Union[str, typing.List[str]]) -> typing.Callable:
+def require_scope(
+    scope: typing.Union[str, typing.List[str]],
+) -> typing.Callable[..., typing.Any]:
     """
     Decorator that requires specific authentication scope(s).
 
@@ -236,9 +244,11 @@ def require_scope(scope: typing.Union[str, typing.List[str]]) -> typing.Callable
         ```
     """
 
-    def decorator(func: typing.Callable) -> typing.Callable:
+    def decorator(
+        func: typing.Callable[..., typing.Any],
+    ) -> typing.Callable[..., typing.Any]:
         @functools.wraps(func)
-        async def wrapper(*args, **kwargs):
+        async def wrapper(*args: typing.Any, **kwargs: typing.Any) -> typing.Any:
             request = _get_request_from_args(args, kwargs)
 
             if request is None:
@@ -270,7 +280,9 @@ def require_scope(scope: typing.Union[str, typing.List[str]]) -> typing.Callable
     return decorator
 
 
-def _get_request_from_args(args: tuple, kwargs: dict):
+def _get_request_from_args(
+    args: tuple[typing.Any, ...], kwargs: dict[str, typing.Any]
+) -> typing.Any:
     """
     Helper function to extract the request object from function arguments.
 

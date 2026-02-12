@@ -92,8 +92,8 @@ class TestRequireAuthDecorator:
         client = TestClient(app_with_decorators, raise_server_exceptions=False)
         response = client.get("/protected")
 
-        # Should raise PermissionDenied which becomes 500 without error handling
-        assert response.status_code == 500
+        # PermissionDenied is an HTTPException with status_code=403
+        assert response.status_code == 403
 
     @patch("google.oauth2.id_token.verify_oauth2_token")
     @patch("googleapiclient.discovery.build")
@@ -166,8 +166,8 @@ class TestRequireGroupDecorator:
             "/admin", headers={"Authorization": f"Bearer {mock_id_token}"}
         )
 
-        # Should raise PermissionDenied
-        assert response.status_code == 500
+        # PermissionDenied is an HTTPException with status_code=403
+        assert response.status_code == 403
 
     @patch("google.oauth2.id_token.verify_oauth2_token")
     @patch("googleapiclient.discovery.build")
@@ -243,8 +243,8 @@ class TestRequireGroupDecorator:
             "/all-groups", headers={"Authorization": f"Bearer {mock_id_token}"}
         )
 
-        # Should fail because user doesn't have all required groups
-        assert response.status_code == 500
+        # PermissionDenied is an HTTPException with status_code=403
+        assert response.status_code == 403
 
 
 class TestStarletteRequiresDecorator:

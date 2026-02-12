@@ -95,11 +95,12 @@ class WorkspaceAuthMiddleware(
 
     def __init__(
         self,
-        app: typing.Callable,
+        app: typing.Callable[..., typing.Any],
         client_id: str,
         required_domains: typing.Optional[typing.List[str]] = None,
         fetch_groups: bool = True,
         credentials: typing.Optional[google.auth.credentials.Credentials] = None,
+        customer_id: typing.Optional[str] = None,
         on_error: typing.Optional[
             typing.Callable[
                 [
@@ -116,6 +117,7 @@ class WorkspaceAuthMiddleware(
             required_domains=required_domains,
             fetch_groups=fetch_groups,
             credentials=credentials,
+            customer_id=customer_id,
         )
 
         # Use custom error handler or default

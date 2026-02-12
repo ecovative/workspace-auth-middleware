@@ -27,6 +27,8 @@ logger.propagate = True
 logger.setLevel(logging.DEBUG)
 logger.handlers = []
 
+_SENTINEL = object()
+
 __all__ = [
     "WorkspaceAuthBackend",
 ]
@@ -181,6 +183,7 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
         required_domains: typing.Optional[typing.List[str]] = None,
         fetch_groups: bool = True,
         credentials: typing.Optional[google.auth.credentials.Credentials] = None,
+        customer_id: typing.Optional[str] = None,
         enable_token_cache: bool = True,
         token_cache_ttl: int = 300,  # 5 minutes
         token_cache_maxsize: int = 1000,
@@ -209,6 +212,7 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
         )
         self.required_domains = required_domains
         self.fetch_groups = fetch_groups
+        self.customer_id = customer_id
         self.enable_session_auth = enable_session_auth
 
         # Cache configuration
@@ -255,7 +259,7 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
                         "https://www.googleapis.com/auth/cloud-identity.groups.readonly",
                     ]
                 )
-                self.credentials.refresh(request)
+                self.credentials.refresh(request)  # type: ignore[no-untyped-call]
 
                 logger.info("Credential building complete")
             except Exception:
@@ -360,6 +364,16 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
                     "Invalid token: missing email or user ID"
                 )
 
+            # Check email_verified claim
+            if not user_info.get("email_verified", False):
+                logger.warning(
+                    "Email not verified for user: %s",
+                    email,
+                )
+                raise starlette.authentication.AuthenticationError(
+                    "Email address has not been verified"
+                )
+
             # Check domain restriction if required
             if self.required_domains and domain not in self.required_domains:
                 logger.warning(
@@ -418,12 +432,68 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
                 f"Authentication failed: {str(e)}"
             )
 
-    async def _verify_token(self, token: str) -> dict:
+    def _verify_token_sync(self, token: str) -> dict[str, typing.Any]:
+        """
+        Synchronous helper to verify a Google ID token.
+
+        Tries each configured client_id and validates the issuer.
+        This runs in an executor to avoid blocking the event loop.
+
+        Args:
+            token: Google ID token string
+
+        Returns:
+            Dictionary of token claims
+
+        Raises:
+            AuthenticationError if token is invalid
+        """
+        logger.debug("Verifying token with Google OAuth2 API")
+        request = google.auth.transport.requests.Request()
+
+        # Try each client_id until one succeeds
+        last_error: typing.Optional[ValueError] = None
+        for cid in self.client_ids:
+            try:
+                idinfo: dict[str, typing.Any] = (
+                    google.oauth2.id_token.verify_oauth2_token(  # type: ignore[no-untyped-call]
+                        token, request, cid
+                    )
+                )
+                logger.debug("Token verified with client_id: %s...", cid[:20])
+                break
+            except ValueError as e:
+                last_error = e
+                logger.debug(
+                    "Token verification failed for client_id %s...: %s", cid[:20], e
+                )
+        else:
+            raise starlette.authentication.AuthenticationError(
+                f"Token verification failed: {last_error}"
+            )
+
+        logger.debug(
+            "Token verified successfully - email: %s, sub: %s",
+            idinfo.get("email"),
+            idinfo.get("sub"),
+        )
+
+        # Additional validation
+        if idinfo.get("iss") not in [
+            "accounts.google.com",
+            "https://accounts.google.com",
+        ]:
+            logger.error("Invalid token issuer: %s", idinfo.get("iss"))
+            raise starlette.authentication.AuthenticationError("Invalid token issuer")
+
+        return idinfo
+
+    async def _verify_token(self, token: str) -> dict[str, typing.Any]:
         """
         Verify Google ID token and return claims.
 
         Uses caching to avoid repeated verification of the same token.
-        Cache TTL respects the token's expiration time.
+        Runs the synchronous verification in an executor to avoid blocking.
 
         Args:
             token: Google ID token string
@@ -441,54 +511,19 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
         if isinstance(self._token_cache, cachetools.TTLCache) and isinstance(
             self._token_cache_stats, dict
         ):
-            if token in self._token_cache:
+            cached = self._token_cache.get(token, _SENTINEL)
+            if cached is not _SENTINEL:
                 self._token_cache_stats["hits"] += 1
                 logger.debug("Token cache HIT for %s", token_preview)
-                return self._token_cache[token]
+                return typing.cast(dict[str, typing.Any], cached)
             self._token_cache_stats["misses"] += 1
             logger.debug("Token cache MISS for %s", token_preview)
 
         try:
-            # Verify the token with Google
-            # Note: This is a synchronous operation, but we can make it async
-            # by running it in an executor if needed
-            logger.debug("Verifying token with Google OAuth2 API")
-            request = google.auth.transport.requests.Request()
-
-            # Try each client_id until one succeeds
-            last_error: typing.Optional[ValueError] = None
-            for cid in self.client_ids:
-                try:
-                    idinfo = google.oauth2.id_token.verify_oauth2_token(
-                        token, request, cid
-                    )
-                    logger.debug("Token verified with client_id: %s...", cid[:20])
-                    break
-                except ValueError as e:
-                    last_error = e
-                    logger.debug(
-                        "Token verification failed for client_id %s...: %s", cid[:20], e
-                    )
-            else:
-                raise starlette.authentication.AuthenticationError(
-                    f"Token verification failed: {last_error}"
-                )
-
-            logger.debug(
-                "Token verified successfully - email: %s, sub: %s",
-                idinfo.get("email"),
-                idinfo.get("sub"),
+            loop = asyncio.get_running_loop()
+            idinfo: dict[str, typing.Any] = await loop.run_in_executor(
+                None, self._verify_token_sync, token
             )
-
-            # Additional validation
-            if idinfo.get("iss") not in [
-                "accounts.google.com",
-                "https://accounts.google.com",
-            ]:
-                logger.error("Invalid token issuer: %s", idinfo.get("iss"))
-                raise starlette.authentication.AuthenticationError(
-                    "Invalid token issuer"
-                )
 
             # Cache the result
             if isinstance(self._token_cache, cachetools.TTLCache):
@@ -497,6 +532,8 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
 
             return idinfo
 
+        except starlette.authentication.AuthenticationError:
+            raise
         except Exception as e:
             logger.error("Token verification failed", exc_info=True)
             raise starlette.authentication.AuthenticationError(
@@ -535,11 +572,11 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
         if isinstance(self._group_cache, cachetools.TTLCache) and isinstance(
             self._group_cache_stats, dict
         ):
-            if email in self._group_cache:
+            cached_groups = self._group_cache.get(email, _SENTINEL)
+            if cached_groups is not _SENTINEL:
                 self._group_cache_stats["hits"] += 1
-                cached_groups = self._group_cache[email]
                 logger.debug("Group cache HIT for %s: %s", email, cached_groups)
-                return cached_groups
+                return typing.cast(typing.List[str], cached_groups)
             self._group_cache_stats["misses"] += 1
             logger.debug("Group cache MISS for %s", email)
 
@@ -556,7 +593,7 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
             logger.debug(
                 "Calling Cloud Identity Groups API to fetch groups for %s", email
             )
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             groups = await loop.run_in_executor(
                 None,
                 self._fetch_groups_sync,
@@ -607,17 +644,26 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
             logger.debug(
                 "Building Cloud Identity Groups API service (cloudidentity/v1)"
             )
-            service = googleapiclient.discovery.build(  # type: ignore[no-untyped-call]
+            service = googleapiclient.discovery.build(
                 "cloudidentity", "v1", credentials=creds
             )
 
             logger.debug("Searching transitive security groups for %s", email)
             groups = []
             next_page_token = ""
+
+            query_parts = [
+                f"member_key_id == '{email.strip()}'",
+                "'cloudidentity.googleapis.com/groups.discussion_forum' in labels",
+            ]
+            if self.customer_id:
+                query_parts.append(f"parent == 'customers/{self.customer_id}'")
+            query_str = " && ".join(query_parts)
+
             while True:
                 query_params = urllib.parse.urlencode(
                     {
-                        "query": f"member_key_id == '{email.strip()}' && 'cloudidentity.googleapis.com/groups.discussion_forum' in labels && parent == 'customers/C028qv0z5'",
+                        "query": query_str,
                         "page_size": 200,
                         "page_token": next_page_token,
                     }
@@ -723,12 +769,8 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
         Returns:
             True if the entry was cached and removed, False otherwise
         """
-        if (
-            isinstance(self._group_cache, cachetools.TTLCache)
-            and email in self._group_cache
-        ):
-            del self._group_cache[email]
-            return True
+        if isinstance(self._group_cache, cachetools.TTLCache):
+            return self._group_cache.pop(email, _SENTINEL) is not _SENTINEL
         return False
 
     def invalidate_token(self, token: str) -> bool:
@@ -743,10 +785,6 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
         Returns:
             True if the token was cached and removed, False otherwise
         """
-        if (
-            isinstance(self._token_cache, cachetools.TTLCache)
-            and token in self._token_cache
-        ):
-            del self._token_cache[token]
-            return True
+        if isinstance(self._token_cache, cachetools.TTLCache):
+            return self._token_cache.pop(token, _SENTINEL) is not _SENTINEL
         return False

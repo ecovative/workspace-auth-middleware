@@ -2,6 +2,8 @@
 Tests for WorkspaceAuthBackend authentication functionality.
 """
 
+import urllib.parse
+
 import pytest
 from unittest.mock import Mock, patch
 from starlette.authentication import AuthenticationError
@@ -297,3 +299,147 @@ class TestGroupFetching:
 
         # Should return empty list on error, not raise
         assert groups == []
+
+
+@pytest.mark.asyncio
+class TestEmailVerified:
+    """Tests for email_verified claim checking."""
+
+    @patch("google.oauth2.id_token.verify_oauth2_token")
+    async def test_email_not_verified_is_rejected(
+        self, mock_verify, client_id, valid_id_token_claims, mock_id_token
+    ):
+        """Test authentication fails when email_verified is False."""
+        claims = {**valid_id_token_claims, "email_verified": False}
+        mock_verify.return_value = claims
+
+        backend = WorkspaceAuthBackend(client_id=client_id, fetch_groups=False)
+
+        conn = Mock(spec=HTTPConnection)
+        conn.headers = {"authorization": f"Bearer {mock_id_token}"}
+
+        with pytest.raises(
+            AuthenticationError, match="Email address has not been verified"
+        ):
+            await backend.authenticate(conn)
+
+    @patch("google.oauth2.id_token.verify_oauth2_token")
+    async def test_email_verified_missing_is_rejected(
+        self, mock_verify, client_id, valid_id_token_claims, mock_id_token
+    ):
+        """Test authentication fails when email_verified claim is absent."""
+        claims = {
+            k: v for k, v in valid_id_token_claims.items() if k != "email_verified"
+        }
+        mock_verify.return_value = claims
+
+        backend = WorkspaceAuthBackend(client_id=client_id, fetch_groups=False)
+
+        conn = Mock(spec=HTTPConnection)
+        conn.headers = {"authorization": f"Bearer {mock_id_token}"}
+
+        with pytest.raises(
+            AuthenticationError, match="Email address has not been verified"
+        ):
+            await backend.authenticate(conn)
+
+    @patch("google.oauth2.id_token.verify_oauth2_token")
+    async def test_email_verified_true_is_accepted(
+        self,
+        mock_verify,
+        client_id,
+        required_domains,
+        valid_id_token_claims,
+        mock_id_token,
+    ):
+        """Test authentication succeeds when email_verified is True."""
+        mock_verify.return_value = (
+            valid_id_token_claims  # already has email_verified: True
+        )
+
+        backend = WorkspaceAuthBackend(
+            client_id=client_id, required_domains=required_domains, fetch_groups=False
+        )
+
+        conn = Mock(spec=HTTPConnection)
+        conn.headers = {"authorization": f"Bearer {mock_id_token}"}
+
+        credentials, user = await backend.authenticate(conn)
+        assert user.email == "user@example.com"
+
+
+@pytest.mark.asyncio
+class TestCustomerId:
+    """Tests for customer_id configuration."""
+
+    @patch(
+        "workspace_auth_middleware.auth.urllib.parse.urlencode",
+        wraps=urllib.parse.urlencode,
+    )
+    @patch("googleapiclient.discovery.build")
+    async def test_query_includes_customer_id_when_set(
+        self,
+        mock_build,
+        mock_urlencode,
+        client_id,
+        mock_google_credentials,
+        mock_cloud_identity_service,
+        sample_groups,
+    ):
+        """Test that the API query includes parent filter when customer_id is set."""
+        mock_build.return_value = mock_cloud_identity_service
+
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            credentials=mock_google_credentials,
+            fetch_groups=True,
+            customer_id="C028qv0z5",
+        )
+
+        await backend._fetch_user_groups("user@example.com")
+
+        # Verify urlencode was called with a query containing parent filter
+        call_args = mock_urlencode.call_args[0][0]
+        assert "parent == 'customers/C028qv0z5'" in call_args["query"]
+
+    @patch(
+        "workspace_auth_middleware.auth.urllib.parse.urlencode",
+        wraps=urllib.parse.urlencode,
+    )
+    @patch("googleapiclient.discovery.build")
+    async def test_query_omits_customer_id_when_not_set(
+        self,
+        mock_build,
+        mock_urlencode,
+        client_id,
+        mock_google_credentials,
+        mock_cloud_identity_service,
+        sample_groups,
+    ):
+        """Test that the API query omits parent filter when customer_id is None."""
+        mock_build.return_value = mock_cloud_identity_service
+
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            credentials=mock_google_credentials,
+            fetch_groups=True,
+            # No customer_id set
+        )
+
+        await backend._fetch_user_groups("user@example.com")
+
+        # Verify urlencode was called with a query NOT containing parent filter
+        call_args = mock_urlencode.call_args[0][0]
+        assert "parent ==" not in call_args["query"]
+
+    def test_customer_id_stored_on_backend(self, client_id):
+        """Test that customer_id is stored as an attribute."""
+        backend = WorkspaceAuthBackend(
+            client_id=client_id, fetch_groups=False, customer_id="C12345"
+        )
+        assert backend.customer_id == "C12345"
+
+    def test_customer_id_defaults_to_none(self, client_id):
+        """Test that customer_id defaults to None."""
+        backend = WorkspaceAuthBackend(client_id=client_id, fetch_groups=False)
+        assert backend.customer_id is None

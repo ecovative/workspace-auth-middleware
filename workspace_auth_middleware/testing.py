@@ -142,7 +142,7 @@ class MockWorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
             result = self.authenticate_fn(conn)
             if inspect.isawaitable(result):
                 result = await result
-            return result  # type: ignore[return-value]
+            return result
 
         # 3. Header mode
         if self.header_mode:
@@ -180,13 +180,13 @@ class MockWorkspaceAuthMiddleware(
 
     def __init__(
         self,
-        app: typing.Callable,
+        app: typing.Callable[..., typing.Any],
         user: typing.Optional[WorkspaceUser] = None,
         error: typing.Optional[str] = None,
-        authenticate_fn: typing.Optional[typing.Callable] = None,
+        authenticate_fn: typing.Optional[typing.Callable[..., typing.Any]] = None,
         header_mode: bool = False,
         header_name: str = "X-Test-User",
-        on_error: typing.Optional[typing.Callable] = None,
+        on_error: typing.Optional[typing.Callable[..., typing.Any]] = None,
     ):
         backend = MockWorkspaceAuthBackend(
             user=user,

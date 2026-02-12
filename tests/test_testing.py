@@ -340,7 +340,7 @@ class TestDecoratorIntegration:
             user=create_workspace_user(groups=[]),
         )
         client = TestClient(app, raise_server_exceptions=False)
-        assert client.get("/admin").status_code == 500
+        assert client.get("/admin").status_code == 403
 
 
 # ---------------------------------------------------------------------------

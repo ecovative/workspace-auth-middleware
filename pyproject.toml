@@ -55,6 +55,12 @@ httpx = "^0.28.1"
 types-requests = "^2.32.4.20250913"
 types-authlib = "^1.6.5.20251005"
 
+[tool.mypy]
+strict = true
+exclude = [
+    "tests/",
+]
+
 [tool.pytest.ini_options]
 # Pytest configuration for workspace-auth-middleware
 

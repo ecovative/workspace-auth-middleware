@@ -64,7 +64,7 @@ def mock_workspace_backend(
     def _factory(
         user: typing.Optional[WorkspaceUser] = None,
         error: typing.Optional[str] = None,
-        authenticate_fn: typing.Optional[typing.Callable] = None,
+        authenticate_fn: typing.Optional[typing.Callable[..., typing.Any]] = None,
         header_mode: bool = False,
         header_name: str = "X-Test-User",
         **user_kwargs: typing.Any,
@@ -116,7 +116,7 @@ def override_workspace_auth(
     def _apply(
         user: typing.Optional[WorkspaceUser] = None,
         error: typing.Optional[str] = None,
-        authenticate_fn: typing.Optional[typing.Callable] = None,
+        authenticate_fn: typing.Optional[typing.Callable[..., typing.Any]] = None,
         header_mode: bool = False,
         header_name: str = "X-Test-User",
         **user_kwargs: typing.Any,
@@ -134,8 +134,8 @@ def override_workspace_auth(
 
         def patched_init(
             self: typing.Any,
-            app: typing.Callable,
-            on_error: typing.Optional[typing.Callable] = None,
+            app: typing.Callable[..., typing.Any],
+            on_error: typing.Optional[typing.Callable[..., typing.Any]] = None,
             **_kwargs: typing.Any,
         ) -> None:
             error_handler = on_error or default_on_error
