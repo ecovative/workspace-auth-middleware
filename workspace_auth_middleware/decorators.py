@@ -222,12 +222,15 @@ def require_group(
 
 def require_scope(
     scope: typing.Union[str, typing.List[str]],
+    require_all: bool = True,
 ) -> typing.Callable[..., typing.Any]:
     """
     Decorator that requires specific authentication scope(s).
 
     Args:
         scope: Single scope or list of scopes
+        require_all: If True, user must have ALL scopes. If False, user must
+                     have at least one scope (default: True)
 
     Raises:
         PermissionDenied if user doesn't have required scope(s)
@@ -241,6 +244,12 @@ def require_scope(
         @require_scope("authenticated")
         async def data_route(request: Request):
             return {"data": "sensitive information"}
+
+        @app.get("/flexible")
+        @require_scope(["scope-a", "scope-b"], require_all=False)
+        async def flexible_route(request: Request):
+            # User needs at least one of the scopes
+            return {"data": "flexible access"}
         ```
     """
 
@@ -265,9 +274,17 @@ def require_scope(
 
             scopes = [scope] if isinstance(scope, str) else scope
 
-            for required_scope in scopes:
-                if not auth.has_scope(required_scope):
-                    raise PermissionDenied(f"Missing required scope: {required_scope}")
+            if require_all:
+                for required_scope in scopes:
+                    if required_scope not in auth.scopes:
+                        raise PermissionDenied(
+                            f"Missing required scope: {required_scope}"
+                        )
+            else:
+                if not any(s in auth.scopes for s in scopes):
+                    raise PermissionDenied(
+                        f"Requires at least one scope: {', '.join(scopes)}"
+                    )
 
             return (
                 await func(*args, **kwargs)

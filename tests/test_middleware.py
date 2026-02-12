@@ -186,6 +186,90 @@ class TestMiddlewareWithGroups:
         assert "group:developers@example.com" in data["scopes"]
 
 
+class TestMiddlewareBackendForwarding:
+    """Tests that WorkspaceAuthMiddleware forwards all parameters to the backend."""
+
+    def test_middleware_forwards_cache_params(self, client_id, required_domains):
+        """Test that cache parameters are forwarded to the backend."""
+
+        async def endpoint(request):
+            return JSONResponse({"message": "ok"})
+
+        app = Starlette(routes=[Route("/test", endpoint)])
+        app.add_middleware(
+            WorkspaceAuthMiddleware,
+            client_id=client_id,
+            required_domains=required_domains,
+            fetch_groups=False,
+            enable_token_cache=True,
+            token_cache_ttl=120,
+            token_cache_maxsize=50,
+            enable_group_cache=False,
+            group_cache_ttl=60,
+            group_cache_maxsize=25,
+        )
+
+        # Force middleware stack build
+        client = TestClient(app)
+        client.get("/test")
+
+        # Access the backend through the middleware stack
+        backend = app.middleware_stack.app.backend  # type: ignore[union-attr]
+        assert backend.enable_token_cache is True
+        assert backend._token_cache is not None
+        assert backend._token_cache.maxsize == 50
+        assert backend._token_cache.ttl == 120
+        assert backend.enable_group_cache is False
+        assert backend._group_cache is None
+
+    def test_middleware_accepts_list_of_client_ids(self, required_domains):
+        """Test that middleware accepts a list of client IDs."""
+
+        async def endpoint(request):
+            return JSONResponse({"message": "ok"})
+
+        app = Starlette(routes=[Route("/test", endpoint)])
+        app.add_middleware(
+            WorkspaceAuthMiddleware,
+            client_id=[
+                "id-one.apps.googleusercontent.com",
+                "id-two.apps.googleusercontent.com",
+            ],
+            required_domains=required_domains,
+            fetch_groups=False,
+        )
+
+        client = TestClient(app)
+        client.get("/test")
+
+        backend = app.middleware_stack.app.backend  # type: ignore[union-attr]
+        assert backend.client_ids == [
+            "id-one.apps.googleusercontent.com",
+            "id-two.apps.googleusercontent.com",
+        ]
+
+    def test_middleware_forwards_session_auth_param(self, client_id, required_domains):
+        """Test that enable_session_auth is forwarded to the backend."""
+
+        async def endpoint(request):
+            return JSONResponse({"message": "ok"})
+
+        app = Starlette(routes=[Route("/test", endpoint)])
+        app.add_middleware(
+            WorkspaceAuthMiddleware,
+            client_id=client_id,
+            required_domains=required_domains,
+            fetch_groups=False,
+            enable_session_auth=False,
+        )
+
+        client = TestClient(app)
+        client.get("/test")
+
+        backend = app.middleware_stack.app.backend  # type: ignore[union-attr]
+        assert backend.enable_session_auth is False
+
+
 class TestCustomErrorHandler:
     """Tests for custom error handlers."""
 

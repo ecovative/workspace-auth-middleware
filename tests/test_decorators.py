@@ -14,6 +14,7 @@ from workspace_auth_middleware import (
     WorkspaceAuthMiddleware,
     require_auth,
     require_group,
+    require_scope,
 )
 
 
@@ -327,4 +328,130 @@ class TestStarletteRequiresDecorator:
         )
 
         # Starlette returns 403 for insufficient permissions
+        assert response.status_code == 403
+
+
+class TestRequireScopeDecorator:
+    """Tests for @require_scope decorator."""
+
+    @pytest.fixture
+    def app_with_scope_routes(
+        self, client_id, required_domains, mock_google_credentials
+    ):
+        """Create test app with scope-decorated routes."""
+
+        @require_scope(["authenticated", "group:admins@example.com"])
+        async def all_scopes_route(request):
+            return JSONResponse({"message": "all scopes"})
+
+        @require_scope(
+            ["group:admins@example.com", "group:developers@example.com"],
+            require_all=False,
+        )
+        async def any_scope_route(request):
+            return JSONResponse({"message": "any scope"})
+
+        routes = [
+            Route("/all-scopes", all_scopes_route),
+            Route("/any-scope", any_scope_route),
+        ]
+
+        app = Starlette(routes=routes)
+        app.add_middleware(
+            WorkspaceAuthMiddleware,
+            client_id=client_id,
+            required_domains=required_domains,
+            credentials=mock_google_credentials,
+            fetch_groups=True,
+        )
+        return app
+
+    @patch("google.oauth2.id_token.verify_oauth2_token")
+    @patch("googleapiclient.discovery.build")
+    def test_require_scope_all_scopes_required_by_default(
+        self,
+        mock_build,
+        mock_verify,
+        app_with_scope_routes,
+        valid_id_token_claims,
+        mock_id_token,
+        mock_cloud_identity_service,
+    ):
+        """Test that require_scope requires all scopes by default."""
+        mock_verify.return_value = valid_id_token_claims
+        mock_build.return_value = mock_cloud_identity_service
+
+        client = TestClient(app_with_scope_routes)
+        response = client.get(
+            "/all-scopes", headers={"Authorization": f"Bearer {mock_id_token}"}
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"message": "all scopes"}
+
+    @patch("google.oauth2.id_token.verify_oauth2_token")
+    @patch("googleapiclient.discovery.build")
+    def test_require_scope_all_mode_missing_scope(
+        self,
+        mock_build,
+        mock_verify,
+        app_with_scope_routes,
+        valid_id_token_claims,
+        mock_id_token,
+    ):
+        """Test that require_scope (default require_all=True) fails when a scope is missing."""
+        mock_verify.return_value = valid_id_token_claims
+        # User has no groups, so missing group:admins@example.com scope
+        mock_build.return_value = create_cloud_identity_mock([])
+
+        client = TestClient(app_with_scope_routes, raise_server_exceptions=False)
+        response = client.get(
+            "/all-scopes", headers={"Authorization": f"Bearer {mock_id_token}"}
+        )
+
+        assert response.status_code == 403
+
+    @patch("google.oauth2.id_token.verify_oauth2_token")
+    @patch("googleapiclient.discovery.build")
+    def test_require_scope_any_mode(
+        self,
+        mock_build,
+        mock_verify,
+        app_with_scope_routes,
+        valid_id_token_claims,
+        mock_id_token,
+    ):
+        """Test that require_scope with require_all=False passes with one matching scope."""
+        mock_verify.return_value = valid_id_token_claims
+        # User only in developers group, but route accepts admins OR developers
+        mock_build.return_value = create_cloud_identity_mock(["developers@example.com"])
+
+        client = TestClient(app_with_scope_routes)
+        response = client.get(
+            "/any-scope", headers={"Authorization": f"Bearer {mock_id_token}"}
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"message": "any scope"}
+
+    @patch("google.oauth2.id_token.verify_oauth2_token")
+    @patch("googleapiclient.discovery.build")
+    def test_require_scope_any_mode_none_present(
+        self,
+        mock_build,
+        mock_verify,
+        app_with_scope_routes,
+        valid_id_token_claims,
+        mock_id_token,
+    ):
+        """Test that require_scope with require_all=False fails when no scopes match."""
+        mock_verify.return_value = valid_id_token_claims
+        # User has no groups, so neither admins nor developers scope
+        mock_build.return_value = create_cloud_identity_mock([])
+
+        client = TestClient(app_with_scope_routes, raise_server_exceptions=False)
+        response = client.get(
+            "/any-scope", headers={"Authorization": f"Bearer {mock_id_token}"}
+        )
+
         assert response.status_code == 403

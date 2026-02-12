@@ -84,23 +84,38 @@ class WorkspaceAuthMiddleware(
 
     Args:
         app: The ASGI application to wrap
-        client_id: Google OAuth2 client ID
+        client_id: Google OAuth2 client ID or list of client IDs for multi-client validation
         required_domains: Optional list of allowed Google Workspace domains (e.g., ["example.com", "partner.com"]).
                          If specified, only users from these domains will be allowed.
                          If None, users from any domain are allowed.
         fetch_groups: If True, fetch user's group memberships using Cloud Identity API
         credentials: Google credentials for Cloud Identity API. If None, uses default credentials
+        customer_id: Optional Google Workspace customer ID for group queries
+        enable_token_cache: Enable caching of verified tokens (default: True)
+        token_cache_ttl: Token cache time-to-live in seconds (default: 300)
+        token_cache_maxsize: Maximum number of cached tokens (default: 1000)
+        enable_group_cache: Enable caching of group memberships (default: True)
+        group_cache_ttl: Group cache time-to-live in seconds (default: 300)
+        group_cache_maxsize: Maximum number of cached group entries (default: 500)
+        enable_session_auth: Enable session-based authentication (default: True)
         on_error: Optional custom error handler (Request, AuthenticationError) -> Response
     """
 
     def __init__(
         self,
         app: typing.Callable[..., typing.Any],
-        client_id: str,
+        client_id: typing.Union[str, typing.List[str]],
         required_domains: typing.Optional[typing.List[str]] = None,
         fetch_groups: bool = True,
         credentials: typing.Optional[google.auth.credentials.Credentials] = None,
         customer_id: typing.Optional[str] = None,
+        enable_token_cache: bool = True,
+        token_cache_ttl: int = 300,
+        token_cache_maxsize: int = 1000,
+        enable_group_cache: bool = True,
+        group_cache_ttl: int = 300,
+        group_cache_maxsize: int = 500,
+        enable_session_auth: bool = True,
         on_error: typing.Optional[
             typing.Callable[
                 [
@@ -118,6 +133,13 @@ class WorkspaceAuthMiddleware(
             fetch_groups=fetch_groups,
             credentials=credentials,
             customer_id=customer_id,
+            enable_token_cache=enable_token_cache,
+            token_cache_ttl=token_cache_ttl,
+            token_cache_maxsize=token_cache_maxsize,
+            enable_group_cache=enable_group_cache,
+            group_cache_ttl=group_cache_ttl,
+            group_cache_maxsize=group_cache_maxsize,
+            enable_session_auth=enable_session_auth,
         )
 
         # Use custom error handler or default
