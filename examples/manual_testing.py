@@ -146,6 +146,7 @@ app.add_middleware(
     client_id=CLIENT_ID,
     required_domains=[WORKSPACE_DOMAIN] if WORKSPACE_DOMAIN else None,
     fetch_groups=FETCH_GROUPS,
+    delegated_admin=DELEGATED_ADMIN,
 )
 
 logger.info("Middleware configured successfully!")

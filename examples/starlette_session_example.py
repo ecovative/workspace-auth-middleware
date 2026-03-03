@@ -50,6 +50,7 @@ backend = WorkspaceAuthBackend(
     required_domains=[WORKSPACE_DOMAIN] if WORKSPACE_DOMAIN else None,
     fetch_groups=True,
     enable_session_auth=True,  # Enable Starlette session support
+    delegated_admin=DELEGATED_ADMIN,
 )
 
 # Create FastAPI app with middlewares

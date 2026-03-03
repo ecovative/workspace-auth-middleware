@@ -277,6 +277,7 @@ middleware = [
             required_domains=[WORKSPACE_DOMAIN] if WORKSPACE_DOMAIN else None,
             fetch_groups=True,  # Fetch Google Workspace groups
             enable_session_auth=True,  # Read from session (populated by Authlib)
+            delegated_admin=DELEGATED_ADMIN,
         ),
     ),
 ]

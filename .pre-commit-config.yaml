@@ -37,7 +37,7 @@ repos:
         language: system
         types: [python]
         files: \.py$
-        exclude: "(docs|tests)/.*"
+        exclude: "(docs|tests|examples)/.*"
         args: ["--config-file", "pyproject.toml"]
       - id: licensecheck
         name: Run Python License Checker
