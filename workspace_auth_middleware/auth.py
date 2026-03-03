@@ -345,11 +345,34 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
             try:
                 session_result = _authenticate_from_session(conn, self.required_domains)
                 if session_result is not None:
+                    credentials, user = session_result
                     logger.debug(
                         "Successfully authenticated via session: %s",
-                        session_result[1].email,
+                        user.email,
                     )
-                    return session_result
+
+                    # Fetch groups from API if enabled (mirrors bearer token path)
+                    if self.fetch_groups:
+                        logger.debug(
+                            "fetch_groups=True, fetching groups for session user %s",
+                            user.email,
+                        )
+                        groups = await self._fetch_user_groups(user.email)
+                        user = WorkspaceUser(
+                            email=user.email,
+                            user_id=user.user_id,
+                            name=user.name,
+                            domain=user.domain,
+                            groups=groups,
+                        )
+                        scopes = ["authenticated"]
+                        if groups:
+                            scopes.extend([f"group:{group}" for group in groups])
+                        credentials = starlette.authentication.AuthCredentials(
+                            scopes=scopes
+                        )
+
+                    return credentials, user
                 else:
                     logger.debug("No valid session data found, will try bearer token")
             except (AssertionError, AttributeError, RuntimeError) as e:

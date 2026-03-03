@@ -758,6 +758,169 @@ class TestSessionAuthentication:
         # Bearer token should NOT have been verified
         mock_verify.assert_not_called()
 
+    @patch.object(WorkspaceAuthBackend, "_fetch_user_groups")
+    async def test_session_auth_fetches_groups_when_enabled(
+        self, mock_fetch_groups, client_id, required_domains, sample_groups
+    ):
+        """Test that fetch_groups=True fetches groups from API for session users."""
+        mock_fetch_groups.return_value = sample_groups
+
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            required_domains=required_domains,
+            fetch_groups=True,
+            enable_session_auth=True,
+        )
+
+        conn = Mock(spec=HTTPConnection)
+        conn.headers = {}
+        conn.session = {
+            "user": {
+                "email": "user@example.com",
+                "user_id": "12345",
+                "name": "Test User",
+                "domain": "example.com",
+                "groups": [],
+            }
+        }
+
+        credentials, user = await backend.authenticate(conn)
+
+        mock_fetch_groups.assert_called_once_with("user@example.com")
+        assert user.groups == sample_groups
+        assert "authenticated" in credentials.scopes
+        for group in sample_groups:
+            assert f"group:{group}" in credentials.scopes
+
+    @patch.object(WorkspaceAuthBackend, "_fetch_user_groups")
+    async def test_session_auth_ignores_session_groups_when_fetch_enabled(
+        self, mock_fetch_groups, client_id, required_domains
+    ):
+        """Test that API groups override stale session groups when fetch_groups=True."""
+        api_groups = ["new-group@example.com"]
+        mock_fetch_groups.return_value = api_groups
+
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            required_domains=required_domains,
+            fetch_groups=True,
+            enable_session_auth=True,
+        )
+
+        conn = Mock(spec=HTTPConnection)
+        conn.headers = {}
+        conn.session = {
+            "user": {
+                "email": "user@example.com",
+                "user_id": "12345",
+                "name": "Test User",
+                "domain": "example.com",
+                "groups": ["stale-group@example.com"],
+            }
+        }
+
+        credentials, user = await backend.authenticate(conn)
+
+        assert user.groups == api_groups
+        assert "group:new-group@example.com" in credentials.scopes
+        assert "group:stale-group@example.com" not in credentials.scopes
+
+    async def test_session_auth_uses_session_groups_when_fetch_disabled(
+        self, client_id, required_domains
+    ):
+        """Test that session groups are preserved when fetch_groups=False."""
+        session_groups = ["admins@example.com"]
+
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            required_domains=required_domains,
+            fetch_groups=False,
+            enable_session_auth=True,
+        )
+
+        conn = Mock(spec=HTTPConnection)
+        conn.headers = {}
+        conn.session = {
+            "user": {
+                "email": "user@example.com",
+                "user_id": "12345",
+                "name": "Test User",
+                "domain": "example.com",
+                "groups": session_groups,
+            }
+        }
+
+        credentials, user = await backend.authenticate(conn)
+
+        assert user.groups == session_groups
+        assert "group:admins@example.com" in credentials.scopes
+
+    @patch.object(WorkspaceAuthBackend, "_fetch_user_groups")
+    async def test_session_auth_group_fetch_failure_returns_empty_groups(
+        self, mock_fetch_groups, client_id, required_domains
+    ):
+        """Test that user is still authenticated when group fetch returns empty."""
+        mock_fetch_groups.return_value = []
+
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            required_domains=required_domains,
+            fetch_groups=True,
+            enable_session_auth=True,
+        )
+
+        conn = Mock(spec=HTTPConnection)
+        conn.headers = {}
+        conn.session = {
+            "user": {
+                "email": "user@example.com",
+                "user_id": "12345",
+                "name": "Test User",
+                "domain": "example.com",
+            }
+        }
+
+        credentials, user = await backend.authenticate(conn)
+
+        assert user.is_authenticated
+        assert user.groups == []
+        assert "authenticated" in credentials.scopes
+        assert len(credentials.scopes) == 1
+
+    @patch.object(WorkspaceAuthBackend, "_fetch_user_groups")
+    async def test_session_auth_with_groups_preserves_user_fields(
+        self, mock_fetch_groups, client_id, required_domains, sample_groups
+    ):
+        """Test that rebuilding user for groups preserves all session fields."""
+        mock_fetch_groups.return_value = sample_groups
+
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            required_domains=required_domains,
+            fetch_groups=True,
+            enable_session_auth=True,
+        )
+
+        conn = Mock(spec=HTTPConnection)
+        conn.headers = {}
+        conn.session = {
+            "user": {
+                "email": "user@example.com",
+                "user_id": "12345",
+                "name": "Test User",
+                "domain": "example.com",
+                "groups": [],
+            }
+        }
+
+        credentials, user = await backend.authenticate(conn)
+
+        assert user.email == "user@example.com"
+        assert user.user_id == "12345"
+        assert user.name == "Test User"
+        assert user.domain == "example.com"
+        assert user.groups == sample_groups
+
 
 @pytest.mark.asyncio
 class TestCacheBehavior:
