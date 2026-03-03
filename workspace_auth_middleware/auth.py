@@ -371,6 +371,12 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
                             scopes=scopes
                         )
 
+                        # Persist groups in session for application code access
+                        try:
+                            conn.session["user"]["groups"] = groups
+                        except (KeyError, TypeError):
+                            pass
+
                     return credentials, user
                 else:
                     logger.debug("No valid session data found, will try bearer token")

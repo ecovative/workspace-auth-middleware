@@ -788,6 +788,8 @@ class TestSessionAuthentication:
         assert "authenticated" in credentials.scopes
         for group in sample_groups:
             assert f"group:{group}" in credentials.scopes
+        # Verify groups are persisted back to session
+        assert conn.session["user"]["groups"] == sample_groups
 
     @patch.object(WorkspaceAuthBackend, "_fetch_user_groups")
     async def test_session_auth_ignores_session_groups_when_fetch_enabled(
@@ -821,6 +823,8 @@ class TestSessionAuthentication:
         assert user.groups == api_groups
         assert "group:new-group@example.com" in credentials.scopes
         assert "group:stale-group@example.com" not in credentials.scopes
+        # Verify stale session groups are replaced
+        assert conn.session["user"]["groups"] == api_groups
 
     async def test_session_auth_uses_session_groups_when_fetch_disabled(
         self, client_id, required_domains
