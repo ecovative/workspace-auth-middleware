@@ -3,7 +3,6 @@ Tests for WorkspaceAuthBackend authentication functionality.
 """
 
 import hashlib
-import urllib.parse
 
 import pytest
 import google.auth.credentials
@@ -399,15 +398,10 @@ class TestEmailVerified:
 class TestCustomerId:
     """Tests for customer_id configuration."""
 
-    @patch(
-        "workspace_auth_middleware.auth.urllib.parse.urlencode",
-        wraps=urllib.parse.urlencode,
-    )
     @patch("googleapiclient.discovery.build")
     async def test_query_includes_customer_id_when_set(
         self,
         mock_build,
-        mock_urlencode,
         client_id,
         mock_google_credentials,
         mock_cloud_identity_service,
@@ -425,19 +419,18 @@ class TestCustomerId:
 
         await backend._fetch_user_groups("user@example.com")
 
-        # Verify urlencode was called with a query containing parent filter
-        call_args = mock_urlencode.call_args[0][0]
-        assert "parent == 'customers/C028qv0z5'" in call_args["query"]
+        # Verify searchTransitiveGroups was called with query containing parent filter
+        call_kwargs = (
+            mock_cloud_identity_service.groups()
+            .memberships()
+            .searchTransitiveGroups.call_args
+        )
+        assert "parent == 'customers/C028qv0z5'" in call_kwargs.kwargs["query"]
 
-    @patch(
-        "workspace_auth_middleware.auth.urllib.parse.urlencode",
-        wraps=urllib.parse.urlencode,
-    )
     @patch("googleapiclient.discovery.build")
     async def test_query_omits_customer_id_when_not_set(
         self,
         mock_build,
-        mock_urlencode,
         client_id,
         mock_google_credentials,
         mock_cloud_identity_service,
@@ -455,9 +448,13 @@ class TestCustomerId:
 
         await backend._fetch_user_groups("user@example.com")
 
-        # Verify urlencode was called with a query NOT containing parent filter
-        call_args = mock_urlencode.call_args[0][0]
-        assert "parent ==" not in call_args["query"]
+        # Verify searchTransitiveGroups was called with query NOT containing parent filter
+        call_kwargs = (
+            mock_cloud_identity_service.groups()
+            .memberships()
+            .searchTransitiveGroups.call_args
+        )
+        assert "parent ==" not in call_kwargs.kwargs["query"]
 
     def test_customer_id_stored_on_backend(self, client_id):
         """Test that customer_id is stored as an attribute."""

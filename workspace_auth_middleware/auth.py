@@ -10,7 +10,6 @@ import hashlib
 import logging
 import re
 import typing
-import urllib.parse
 
 import google.auth
 import google.auth.credentials
@@ -754,19 +753,17 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
             query_str = " && ".join(query_parts)
 
             while True:
-                query_params = urllib.parse.urlencode(
-                    {
-                        "query": query_str,
-                        "page_size": 200,
-                        "page_token": next_page_token,
-                    }
-                )
+                kwargs: typing.Dict[str, typing.Any] = {
+                    "parent": "groups/-",
+                    "query": query_str,
+                    "pageSize": 200,
+                }
+                if next_page_token:
+                    kwargs["pageToken"] = next_page_token
+
                 request = (
-                    service.groups()
-                    .memberships()
-                    .searchTransitiveGroups(parent="groups/-")
+                    service.groups().memberships().searchTransitiveGroups(**kwargs)
                 )
-                request.uri += "&" + query_params
 
                 logger.debug(request.uri)
                 response = request.execute()
@@ -774,12 +771,8 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
                 if "memberships" in response:
                     groups += [m["groupKey"]["id"] for m in response["memberships"]]
 
-                if "nextPageToken" in response:
-                    next_page_token = response["nextPageToken"]
-                else:
-                    next_page_token = ""
-
-                if len(next_page_token) == 0:
+                next_page_token = response.get("nextPageToken", "")
+                if not next_page_token:
                     break
 
             logger.debug(
@@ -877,12 +870,10 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
         """
         groups: typing.List[str] = []
         page_token: typing.Optional[str] = None
-        customer = self.customer_id or "my_customer"
 
         while True:
             request = service.groups().list(
                 userKey=email,
-                customer=customer,
                 pageToken=page_token,
             )
             response = request.execute()
