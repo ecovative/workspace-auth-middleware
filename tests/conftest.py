@@ -119,11 +119,6 @@ def mock_admin_directory_service():
         ]
     }
 
-    # members().list() returns empty (no nesting)
-    service.members.return_value.list.return_value.execute.return_value = {
-        "members": []
-    }
-
     return service
 
 
@@ -134,8 +129,9 @@ def mock_admin_directory_service_with_nesting():
 
     Structure:
     - user@example.com -> direct member of [team-a@example.com, devs@example.com]
-    - team-a@example.com -> nested in all-teams@example.com
-    - all-teams@example.com -> nested in org@example.com
+    - user@example.com -> transitive member of all-teams@example.com (via team-a)
+    - user@example.com -> transitive member of org@example.com (via team-a -> all-teams)
+    - user@example.com -> NOT a member of unrelated@example.com
     """
     service = MagicMock()
 
@@ -147,46 +143,18 @@ def mock_admin_directory_service_with_nesting():
         ]
     }
 
-    # members().list(groupKey=...) returns different results per group
-    def members_list_side_effect(groupKey, pageToken=None):
+    # members().hasMember(groupKey=..., memberKey=...) checks transitive membership
+    def has_member_side_effect(groupKey, memberKey):
         mock_request = MagicMock()
-        members_map = {
-            "all-teams@example.com": {
-                "members": [
-                    {"email": "team-a@example.com", "type": "GROUP"},
-                    {"email": "team-b@example.com", "type": "GROUP"},
-                ]
-            },
-            "org@example.com": {
-                "members": [
-                    {"email": "all-teams@example.com", "type": "GROUP"},
-                    {"email": "leadership@example.com", "type": "GROUP"},
-                ]
-            },
-            "team-a@example.com": {
-                "members": [
-                    {"email": "user@example.com", "type": "USER"},
-                ]
-            },
-            "team-b@example.com": {
-                "members": [
-                    {"email": "other@example.com", "type": "USER"},
-                ]
-            },
-            "leadership@example.com": {
-                "members": [
-                    {"email": "boss@example.com", "type": "USER"},
-                ]
-            },
-            "unrelated@example.com": {
-                "members": [
-                    {"email": "stranger@example.com", "type": "USER"},
-                ]
-            },
+        # user@example.com is a transitive member of these groups
+        membership = {
+            ("all-teams@example.com", "user@example.com"): True,
+            ("org@example.com", "user@example.com"): True,
         }
-        mock_request.execute.return_value = members_map.get(groupKey, {"members": []})
+        is_member = membership.get((groupKey, memberKey), False)
+        mock_request.execute.return_value = {"isMember": is_member}
         return mock_request
 
-    service.members.return_value.list.side_effect = members_list_side_effect
+    service.members.return_value.hasMember.side_effect = has_member_side_effect
 
     return service

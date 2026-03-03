@@ -1445,14 +1445,14 @@ class TestTargetGroups:
     """Tests for target_groups optimization."""
 
     @patch("googleapiclient.discovery.build")
-    async def test_direct_match_optimization(
+    async def test_direct_match_skips_has_member(
         self,
         mock_build,
         client_id,
         mock_google_credentials,
         mock_admin_directory_service_with_nesting,
     ):
-        """Test that direct group matches don't trigger BFS."""
+        """Test that direct group matches don't call hasMember API."""
         mock_build.return_value = mock_admin_directory_service_with_nesting
 
         backend = WorkspaceAuthBackend(
@@ -1465,20 +1465,20 @@ class TestTargetGroups:
 
         groups = await backend._fetch_user_groups("user@example.com")
 
-        # Both are direct groups — no members.list() should be called
+        # Both are direct groups — hasMember should not be called
         assert "team-a@example.com" in groups
         assert "devs@example.com" in groups
-        mock_admin_directory_service_with_nesting.members.return_value.list.assert_not_called()
+        mock_admin_directory_service_with_nesting.members.return_value.hasMember.assert_not_called()
 
     @patch("googleapiclient.discovery.build")
-    async def test_bfs_for_non_direct_targets(
+    async def test_has_member_for_non_direct_targets(
         self,
         mock_build,
         client_id,
         mock_google_credentials,
         mock_admin_directory_service_with_nesting,
     ):
-        """Test BFS resolution for targets not in direct groups."""
+        """Test hasMember resolution for targets not in direct groups."""
         mock_build.return_value = mock_admin_directory_service_with_nesting
 
         backend = WorkspaceAuthBackend(
@@ -1501,7 +1501,7 @@ class TestTargetGroups:
         mock_google_credentials,
         mock_admin_directory_service_with_nesting,
     ):
-        """Test BFS resolves through multiple levels (org -> all-teams -> team-a)."""
+        """Test hasMember resolves deep nesting (org -> all-teams -> team-a)."""
         mock_build.return_value = mock_admin_directory_service_with_nesting
 
         backend = WorkspaceAuthBackend(
@@ -1514,52 +1514,32 @@ class TestTargetGroups:
 
         groups = await backend._fetch_user_groups("user@example.com")
 
-        # org contains all-teams, which contains team-a (user's direct group)
+        # hasMember handles transitive resolution natively
         assert "org@example.com" in groups
 
     @patch("googleapiclient.discovery.build")
-    async def test_depth_limiting(
+    async def test_has_member_failure_returns_no_match(
         self,
         mock_build,
         client_id,
         mock_google_credentials,
     ):
-        """Test that BFS respects the depth limit."""
+        """Test that hasMember API errors result in no match for that group."""
         service = MagicMock()
 
-        # User's direct groups
         service.groups.return_value.list.return_value.execute.return_value = {
             "groups": [{"email": "leaf@example.com"}]
         }
 
-        # Create a chain deeper than 5 levels
-        def members_side_effect(groupKey, pageToken=None):
-            mock_request = MagicMock()
-            depth_map = {
-                "target@example.com": {
-                    "members": [{"email": "level1@example.com", "type": "GROUP"}]
-                },
-                "level1@example.com": {
-                    "members": [{"email": "level2@example.com", "type": "GROUP"}]
-                },
-                "level2@example.com": {
-                    "members": [{"email": "level3@example.com", "type": "GROUP"}]
-                },
-                "level3@example.com": {
-                    "members": [{"email": "level4@example.com", "type": "GROUP"}]
-                },
-                "level4@example.com": {
-                    "members": [{"email": "level5@example.com", "type": "GROUP"}]
-                },
-                # level5 contains the leaf, but depth limit should prevent reaching it
-                "level5@example.com": {
-                    "members": [{"email": "leaf@example.com", "type": "GROUP"}]
-                },
-            }
-            mock_request.execute.return_value = depth_map.get(groupKey, {"members": []})
-            return mock_request
+        # hasMember raises an error
+        def has_member_error(groupKey, memberKey):
+            from googleapiclient.errors import HttpError
 
-        service.members.return_value.list.side_effect = members_side_effect
+            resp = MagicMock()
+            resp.status = 403
+            raise HttpError(resp, b"Not Authorized")
+
+        service.members.return_value.hasMember.side_effect = has_member_error
         mock_build.return_value = service
 
         backend = WorkspaceAuthBackend(
@@ -1572,7 +1552,7 @@ class TestTargetGroups:
 
         groups = await backend._fetch_user_groups("user@example.com")
 
-        # Should NOT match because the chain is 6 levels deep (exceeds max_depth=5)
+        # Should NOT match because hasMember failed
         assert "target@example.com" not in groups
 
     @patch("googleapiclient.discovery.build")

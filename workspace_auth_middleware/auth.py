@@ -830,11 +830,21 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
                 direct_groups,
             )
 
-            # Step 2: If target_groups is set, resolve transitive membership efficiently
+            # Step 2: If target_groups is set, check membership via hasMember API
             if self.target_groups:
-                matched = self._resolve_targeted_groups(
-                    service, direct_groups, self.target_groups
-                )
+                direct_set = {g.lower() for g in direct_groups}
+                matched: typing.List[str] = []
+
+                for target in self.target_groups:
+                    # Quick check: skip API call if it's a direct group
+                    if target.lower() in direct_set:
+                        matched.append(target)
+                        continue
+
+                    # Use hasMember to check transitive/nested membership
+                    if self._has_member_sync(service, target, email):
+                        matched.append(target)
+
                 logger.debug(
                     "Resolved %d targeted groups for %s: %s",
                     len(matched),
@@ -891,108 +901,43 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
 
         return groups
 
-    def _resolve_targeted_groups(
+    def _has_member_sync(
         self,
         service: typing.Any,
-        direct_groups: typing.List[str],
-        target_groups: typing.List[str],
-    ) -> typing.List[str]:
-        """
-        Resolve transitive group membership for specific target groups using BFS.
-
-        Algorithm:
-        1. Check which targets are in the user's direct groups (instant match)
-        2. For remaining targets, BFS top-down through members.list() looking for
-           the user's direct groups among GROUP-type members
-        3. Depth-limited to 5 levels per target
-
-        Args:
-            service: Admin SDK Directory API service
-            direct_groups: User's direct group emails
-            target_groups: Specific groups to check membership for
-
-        Returns:
-            List of matched target group emails
-        """
-        direct_set = {g.lower() for g in direct_groups}
-        matched: typing.List[str] = []
-
-        for target in target_groups:
-            # Quick check: is the target a direct group?
-            if target.lower() in direct_set:
-                matched.append(target)
-                continue
-
-            # BFS top-down: check if any of user's direct groups are nested in target
-            if self._bfs_check_membership(service, target, direct_set, max_depth=5):
-                matched.append(target)
-
-        return matched
-
-    def _bfs_check_membership(
-        self,
-        service: typing.Any,
-        target_group: str,
-        direct_groups: typing.Set[str],
-        max_depth: int = 5,
+        group_key: str,
+        member_key: str,
     ) -> bool:
         """
-        BFS through a target group's members to find if any of the user's direct
-        groups are nested within it.
+        Check if a user is a member of a group using the hasMember API.
+
+        This handles both direct and nested (transitive) membership within
+        the same domain via a single API call.
 
         Args:
             service: Admin SDK Directory API service
-            target_group: The group to search through
-            direct_groups: Set of user's direct group emails (lowercased)
-            max_depth: Maximum BFS depth
+            group_key: Group email address to check
+            member_key: User email address to check membership for
 
         Returns:
-            True if any direct group is found nested within target_group
+            True if the user is a member (direct or nested) of the group
         """
-        # Queue of (group_email, depth) pairs
-        queue: typing.List[typing.Tuple[str, int]] = [(target_group, 0)]
-        visited: typing.Set[str] = {target_group.lower()}
-
-        while queue:
-            current_group, depth = queue.pop(0)
-
-            if depth >= max_depth:
-                continue
-
-            try:
-                page_token: typing.Optional[str] = None
-                while True:
-                    request = service.members().list(
-                        groupKey=current_group,
-                        pageToken=page_token,
-                    )
-                    response = request.execute()
-
-                    for member in response.get("members", []):
-                        member_email = member.get("email", "").lower()
-                        member_type = member.get("type", "")
-
-                        # If this member is one of user's direct groups, we found a match
-                        if member_type == "GROUP" and member_email in direct_groups:
-                            return True
-
-                        # Queue nested groups for further exploration
-                        if member_type == "GROUP" and member_email not in visited:
-                            visited.add(member_email)
-                            queue.append((member_email, depth + 1))
-
-                    page_token = response.get("nextPageToken")
-                    if not page_token:
-                        break
-            except Exception:
-                logger.debug(
-                    "Error listing members for %s, skipping",
-                    current_group,
-                    exc_info=True,
-                )
-                continue
-
-        return False
+        try:
+            result = (
+                service.members()
+                .hasMember(groupKey=group_key, memberKey=member_key)
+                .execute()
+            )
+            is_member = result.get("isMember", False)
+            logger.debug("hasMember(%s, %s) = %s", group_key, member_key, is_member)
+            return bool(is_member)
+        except Exception:
+            logger.warning(
+                "hasMember check failed for %s in %s",
+                member_key,
+                group_key,
+                exc_info=True,
+            )
+            return False
 
     def get_cache_stats(self) -> typing.Dict[str, typing.Any]:
         """
