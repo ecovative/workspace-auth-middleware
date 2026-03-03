@@ -371,9 +371,13 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
                             scopes=scopes
                         )
 
-                        # Persist groups in session for application code access
+                        # Persist groups in session so application code
+                        # can read them from request.session["user"]["groups"].
+                        # Only write when changed to avoid re-signing the
+                        # session cookie on every request.
                         try:
-                            conn.session["user"]["groups"] = groups
+                            if conn.session["user"].get("groups") != groups:
+                                conn.session["user"]["groups"] = groups
                         except (KeyError, TypeError):
                             pass
 
