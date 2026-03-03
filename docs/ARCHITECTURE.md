@@ -198,6 +198,15 @@ app.add_middleware(
 - `invalidate_user_groups(email)`: Remove specific user's groups from cache
 
 **Authentication Flow**:
+
+*Session path (when `enable_session_auth=True`):*
+1. Read user data from `request.session["user"]`
+2. Validate domain restrictions (if configured)
+3. Fetch user's groups from API (if `fetch_groups=True`, with caching)
+4. Create `WorkspaceUser` with fetched groups
+5. Return `(AuthCredentials, WorkspaceUser)`
+
+*Bearer token path (fallback):*
 1. Check for `Authorization: Bearer <token>` header
 2. Extract token from header
 3. Verify token (check cache first, then call Google API)

@@ -358,7 +358,8 @@ middleware = [
         backend=WorkspaceAuthBackend(
             client_id="your-client-id.apps.googleusercontent.com",
             required_domains=["example.com"],
-            enable_session_auth=True,  # Enable session support
+            fetch_groups=True,          # Fetch groups from API (works for both session and bearer)
+            enable_session_auth=True,   # Enable session support
         ),
     ),
 ]

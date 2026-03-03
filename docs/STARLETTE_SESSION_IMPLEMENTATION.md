@@ -25,16 +25,23 @@ async def authenticate(self, conn):
         try:
             session_result = authenticate_from_session(conn, self.required_domains)
             if session_result:
-                return session_result
+                credentials, user = session_result
+                # Fetch groups from API if enabled (mirrors bearer token path)
+                if self.fetch_groups:
+                    groups = await self._fetch_user_groups(user.email)
+                    # Rebuild user and credentials with fetched groups
+                    ...
+                return credentials, user
         except (AssertionError, AttributeError, RuntimeError):
             pass  # SessionMiddleware not installed
 
     # 2. Fall back to bearer token (original behavior)
     if "authorization" in conn.headers:
-        # ... verify ID token ...
+        # ... verify ID token, fetch groups ...
 ```
 
 **Key Features:**
+- Group fetching works for both session and bearer token auth paths
 - Gracefully handles missing SessionMiddleware
 - Validates session data types (protects against Mock objects in tests)
 - Maintains full backward compatibility
@@ -92,9 +99,11 @@ request.session["user"] = {
     "user_id": "123456",
     "name": "John Doe",
     "domain": "example.com",
-    "groups": ["team@example.com"],
+    "groups": [],  # Leave empty — middleware fetches groups when fetch_groups=True
 }
 ```
+
+**Note:** When `fetch_groups=True`, groups are fetched from the Google API (with caching) on each request, ignoring any `groups` value in the session. When `fetch_groups=False`, the session's `groups` field is used as-is.
 
 ### Authentication Flow
 

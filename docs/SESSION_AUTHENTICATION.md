@@ -205,6 +205,8 @@ async def profile(request: Request):
 3. AuthenticationMiddleware calls backend.authenticate(conn)
 4. Backend checks:
    a. If request.session["user"] exists → Create user from session
+      → If fetch_groups=True: fetch groups from API (cached)
+      → Populate user.groups and credential scopes
    b. Else if Authorization header exists → Verify ID token
    c. Else → Anonymous user (request.user = UnauthenticatedUser)
 5. Route handler accesses request.user
@@ -218,9 +220,11 @@ request.session["user"] = {
     "user_id": "123456",
     "name": "John Doe",
     "domain": "example.com",
-    "groups": ["team@example.com", "admins@example.com"],
+    "groups": [],  # Leave empty — middleware fetches groups when fetch_groups=True
 }
 ```
+
+**Note:** When `fetch_groups=True` (the default), the middleware fetches groups from the Google API on each request (with caching), so any `groups` value stored in the session is ignored. When `fetch_groups=False`, the session's `groups` field is used as-is.
 
 ## Backend Implementation
 
@@ -230,13 +234,20 @@ The `WorkspaceAuthBackend.authenticate()` method:
 async def authenticate(self, conn):
     # 1. Check session first (if enabled)
     if self.enable_session_auth and hasattr(conn, "session"):
-        session_user = authenticate_from_session(conn, self.required_domains)
-        if session_user:
-            return session_user
+        session_result = authenticate_from_session(conn, self.required_domains)
+        if session_result:
+            credentials, user = session_result
+            # Fetch groups from API if enabled (same as bearer token path)
+            if self.fetch_groups:
+                groups = await self._fetch_user_groups(user.email)
+                # Rebuild user and credentials with fetched groups
+                user = WorkspaceUser(..., groups=groups)
+                credentials = AuthCredentials(["authenticated", "group:..."])
+            return credentials, user
 
     # 2. Fall back to bearer token
     if "authorization" in conn.headers:
-        # ... verify ID token ...
+        # ... verify ID token, fetch groups ...
         return credentials, user
 
     # 3. Anonymous

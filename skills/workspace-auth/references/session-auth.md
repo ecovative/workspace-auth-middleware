@@ -105,12 +105,19 @@ The backend reads `request.session["user"]` with these fields:
 | `user_id` | Yes | Google user ID (from `sub` claim) |
 | `name` | No | Display name (defaults to email) |
 | `domain` | No | Workspace domain (derived from email if absent) |
-| `groups` | No | List of group emails (defaults to `[]`) |
+| `groups` | No | List of group emails (defaults to `[]`). Ignored when `fetch_groups=True` — groups are fetched from the API instead. |
+
+## Group Fetching for Session Auth
+
+When `fetch_groups=True` (default), the backend fetches groups from the Google API (Cloud Identity or Admin SDK) for session-authenticated users, just like it does for bearer token auth. The group cache is shared between both auth paths.
+
+- `fetch_groups=True`: groups fetched from API on each request (cached), session `groups` field ignored
+- `fetch_groups=False`: session `groups` field used as-is
 
 ## Authentication Priority
 
 When `enable_session_auth=True`, the backend checks in this order:
 
-1. Session data (`request.session["user"]`)
-2. Bearer token (`Authorization: Bearer <token>`)
+1. Session data (`request.session["user"]`) → fetch groups from API if `fetch_groups=True`
+2. Bearer token (`Authorization: Bearer <token>`) → verify token, fetch groups if `fetch_groups=True`
 3. Neither present -> anonymous user
