@@ -56,8 +56,8 @@ Scopes are automatically populated:
 **Option 1: Use convenience wrapper**
 
 The `WorkspaceAuthMiddleware` wrapper forwards all parameters to `WorkspaceAuthBackend`, including
-`client_id` (accepts `str` or `List[str]` for multi-client validation), all cache parameters, and
-`enable_session_auth`.
+`client_id` (accepts `str` or `List[str]` for multi-client validation), all cache parameters,
+`enable_session_auth`, `delegated_admin`, and `target_groups`.
 
 ```python
 from workspace_auth_middleware import WorkspaceAuthMiddleware
@@ -219,6 +219,29 @@ Group fetching requires:
 - Service account with Groups Reader role in Google Workspace Admin Console
 - Cloud Identity scope: `https://www.googleapis.com/auth/cloud-identity.groups.readonly`
 - `google-api-python-client` package installed
+
+**4. Admin SDK for Business Standard (domain-wide delegation)**
+```python
+backend = WorkspaceAuthBackend(
+    client_id="...",
+    delegated_admin="admin@example.com",  # triggers Admin SDK path
+    target_groups=[                        # recommended for efficiency
+        "admins@example.com",
+        "developers@example.com",
+    ],
+)
+```
+
+Admin SDK group fetching requires:
+- Service account with domain-wide delegation enabled
+- Admin SDK scopes granted in Admin Console: `admin.directory.group.readonly`, `admin.directory.group.member.readonly`
+- A delegated admin email (any Workspace admin account)
+- Does NOT require Cloud Identity Premium (works with Business Standard)
+
+| Parameter | Type | Default | Purpose |
+|-----------|------|---------|---------|
+| `delegated_admin` | `Optional[str]` | `None` | Workspace admin email for domain-wide delegation. When set, uses Admin SDK instead of Cloud Identity. |
+| `target_groups` | `Optional[List[str]]` | `None` | Specific groups to check membership for. Enables efficient transitive group resolution via BFS (Admin SDK) or filters results (Cloud Identity). |
 
 ## Development Environment Setup
 

@@ -140,7 +140,7 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
                          If specified, only users from these domains will be allowed.
                          If None, users from any domain are allowed.
         fetch_groups: If True, fetch user's group memberships (requires Cloud Identity Groups API).
-                     The service account must have the Groups Administrator role assigned.
+                     The service account must have the Groups Reader role assigned.
         credentials: Google credentials for Cloud Identity API calls. If None, uses default
                     application credentials with cloud-identity.groups scope.
         enable_session_auth: If True, check request.session for user data (requires SessionMiddleware)
@@ -197,6 +197,8 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
         group_cache_ttl: int = 300,  # 5 minutes
         group_cache_maxsize: int = 500,
         enable_session_auth: bool = True,
+        delegated_admin: typing.Optional[str] = None,
+        target_groups: typing.Optional[typing.List[str]] = None,
     ):
         # Normalize client_id to a list
         self.client_ids: typing.List[str] = (
@@ -208,18 +210,23 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
         logger.info(
             "Initializing WorkspaceAuthBackend - "
             "client_ids: %s, required_domains: %s, fetch_groups: %s, "
-            "enable_session_auth: %s, enable_token_cache: %s, enable_group_cache: %s",
+            "enable_session_auth: %s, enable_token_cache: %s, enable_group_cache: %s, "
+            "delegated_admin: %s, target_groups: %s",
             [c[:20] + "..." for c in self.client_ids],
             required_domains,
             fetch_groups,
             enable_session_auth,
             enable_token_cache,
             enable_group_cache,
+            delegated_admin,
+            target_groups,
         )
         self.required_domains = required_domains
         self.fetch_groups = fetch_groups
         self.customer_id = customer_id
         self.enable_session_auth = enable_session_auth
+        self.delegated_admin = delegated_admin
+        self.target_groups = target_groups
 
         # Cache configuration
         self.enable_token_cache = enable_token_cache
@@ -250,8 +257,9 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
             self._group_cache = None
             self._group_cache_stats = None
 
-        # Lazily-built Cloud Identity API service (reused across group fetches)
+        # Lazily-built API services (reused across group fetches)
         self._cloud_identity_service: typing.Any = None
+        self._admin_directory_service: typing.Any = None
 
         # Use provided credentials or fallback to default application credentials
         self.credentials: typing.Optional[google.auth.credentials.Credentials]
@@ -260,15 +268,39 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
             self.credentials = credentials
         elif fetch_groups:
             try:
-                logger.info("Using application default credentials for group fetching")
-
-                request = google.auth.transport.requests.Request()
-                self.credentials, _ = google.auth.default(
-                    scopes=[
+                if delegated_admin:
+                    logger.info(
+                        "Using application default credentials with domain-wide "
+                        "delegation for Admin SDK (delegated_admin=%s)",
+                        delegated_admin,
+                    )
+                    scopes = [
+                        "https://www.googleapis.com/auth/admin.directory.group.readonly",
+                        "https://www.googleapis.com/auth/admin.directory.group.member.readonly",
+                    ]
+                else:
+                    logger.info(
+                        "Using application default credentials for Cloud Identity"
+                    )
+                    scopes = [
                         "https://www.googleapis.com/auth/cloud-identity.groups.readonly",
                     ]
-                )
-                self.credentials.refresh(request)  # type: ignore[no-untyped-call]
+
+                request = google.auth.transport.requests.Request()
+                creds, _ = google.auth.default(scopes=scopes)
+
+                if delegated_admin:
+                    if not hasattr(creds, "with_subject"):
+                        raise ValueError(
+                            "delegated_admin requires a service account credential "
+                            "that supports domain-wide delegation. Compute Engine "
+                            "default credentials do not support with_subject(). "
+                            "Use a service account key file instead."
+                        )
+                    creds = creds.with_subject(delegated_admin)
+
+                creds.refresh(request)  # type: ignore[no-untyped-call]
+                self.credentials = creds
 
                 logger.info("Credential building complete")
             except Exception:
@@ -558,12 +590,12 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
 
         This method uses the Cloud Identity Groups API to fetch the list of
         groups that a user belongs to. Requires:
-        1. Service account with Groups Administrator role assigned in Google Workspace
+        1. Service account with Groups Reader role assigned in Google Workspace
         2. cloud-identity.groups scope
         3. google-api-python-client package installed
 
         Note: This approach does NOT require domain-wide delegation. The service account
-        acts as itself with the Groups Administrator role.
+        acts as itself with the Groups Reader role.
 
         Args:
             email: User's email address
@@ -598,17 +630,40 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
             return []
 
         try:
-            # Run Cloud Identity API call in executor (it's synchronous)
-            logger.debug(
-                "Calling Cloud Identity Groups API to fetch groups for %s", email
-            )
             loop = asyncio.get_running_loop()
-            groups = await loop.run_in_executor(
-                None,
-                self._fetch_groups_sync,
-                self.credentials,
-                email,
-            )
+
+            if self.delegated_admin:
+                # Use Admin SDK Directory API (for Business Standard)
+                logger.debug(
+                    "Calling Admin SDK Directory API to fetch groups for %s", email
+                )
+                groups = await loop.run_in_executor(
+                    None,
+                    self._fetch_groups_admin_sdk_sync,
+                    self.credentials,
+                    email,
+                )
+            else:
+                # Use Cloud Identity API (for Enterprise / Cloud Identity Premium)
+                logger.debug(
+                    "Calling Cloud Identity Groups API to fetch groups for %s", email
+                )
+                groups = await loop.run_in_executor(
+                    None,
+                    self._fetch_groups_sync,
+                    self.credentials,
+                    email,
+                )
+
+            # Filter by target_groups if specified (applies to both paths)
+            if self.target_groups is not None:
+                target_set = set(self.target_groups)
+                groups = [g for g in groups if g in target_set]
+                logger.debug(
+                    "Filtered groups by target_groups, %d remaining: %s",
+                    len(groups),
+                    groups,
+                )
 
             logger.debug(
                 "Successfully fetched %d groups for %s: %s", len(groups), email, groups
@@ -714,6 +769,214 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
             # Return empty list on any error
             logger.error("Cloud Identity API call failed for %s", email, exc_info=True)
             return []
+
+    def _fetch_groups_admin_sdk_sync(
+        self, creds: google.auth.credentials.Credentials, email: str
+    ) -> typing.List[str]:
+        """
+        Fetch groups using Admin SDK Directory API (works with Business Standard).
+
+        This uses the Admin SDK Directory API which is available on all Workspace
+        editions but requires domain-wide delegation via a delegated admin account.
+
+        When target_groups is set, uses an efficient BFS algorithm to resolve
+        transitive membership for only the specified groups. Without target_groups,
+        returns only direct group memberships.
+
+        Args:
+            creds: Google credentials with admin.directory.group.* scopes
+            email: User's email address
+
+        Returns:
+            List of group email addresses
+        """
+        if not _EMAIL_RE.match(email):
+            logger.warning("Invalid email format, skipping group fetch: %s", email)
+            return []
+
+        try:
+            logger.debug("_fetch_groups_admin_sdk_sync() called for %s", email)
+
+            # Build the Admin SDK Directory API service once, then reuse
+            if self._admin_directory_service is None:
+                logger.debug("Building Admin SDK Directory API service (admin/v1)")
+                self._admin_directory_service = googleapiclient.discovery.build(
+                    "admin", "directory_v1", credentials=creds, cache_discovery=False
+                )
+            service = self._admin_directory_service
+
+            # Step 1: Fetch direct groups
+            direct_groups = self._fetch_direct_groups_sync(service, email)
+            logger.debug(
+                "User %s has %d direct groups: %s",
+                email,
+                len(direct_groups),
+                direct_groups,
+            )
+
+            # Step 2: If target_groups is set, resolve transitive membership efficiently
+            if self.target_groups:
+                matched = self._resolve_targeted_groups(
+                    service, direct_groups, self.target_groups
+                )
+                logger.debug(
+                    "Resolved %d targeted groups for %s: %s",
+                    len(matched),
+                    email,
+                    matched,
+                )
+                return matched
+            else:
+                logger.info(
+                    "Admin SDK returns direct groups only. Set target_groups for "
+                    "transitive group resolution."
+                )
+                return direct_groups
+
+        except Exception:
+            logger.error(
+                "Admin SDK Directory API call failed for %s", email, exc_info=True
+            )
+            return []
+
+    def _fetch_direct_groups_sync(
+        self, service: typing.Any, email: str
+    ) -> typing.List[str]:
+        """
+        Fetch a user's direct group memberships via Admin SDK.
+
+        Args:
+            service: Admin SDK Directory API service
+            email: User's email address
+
+        Returns:
+            List of group email addresses the user directly belongs to
+        """
+        groups: typing.List[str] = []
+        page_token: typing.Optional[str] = None
+        customer = self.customer_id or "my_customer"
+
+        while True:
+            request = service.groups().list(
+                userKey=email,
+                customer=customer,
+                pageToken=page_token,
+            )
+            response = request.execute()
+
+            for group in response.get("groups", []):
+                group_email = group.get("email")
+                if group_email:
+                    groups.append(group_email)
+
+            page_token = response.get("nextPageToken")
+            if not page_token:
+                break
+
+        return groups
+
+    def _resolve_targeted_groups(
+        self,
+        service: typing.Any,
+        direct_groups: typing.List[str],
+        target_groups: typing.List[str],
+    ) -> typing.List[str]:
+        """
+        Resolve transitive group membership for specific target groups using BFS.
+
+        Algorithm:
+        1. Check which targets are in the user's direct groups (instant match)
+        2. For remaining targets, BFS top-down through members.list() looking for
+           the user's direct groups among GROUP-type members
+        3. Depth-limited to 5 levels per target
+
+        Args:
+            service: Admin SDK Directory API service
+            direct_groups: User's direct group emails
+            target_groups: Specific groups to check membership for
+
+        Returns:
+            List of matched target group emails
+        """
+        direct_set = {g.lower() for g in direct_groups}
+        matched: typing.List[str] = []
+
+        for target in target_groups:
+            # Quick check: is the target a direct group?
+            if target.lower() in direct_set:
+                matched.append(target)
+                continue
+
+            # BFS top-down: check if any of user's direct groups are nested in target
+            if self._bfs_check_membership(service, target, direct_set, max_depth=5):
+                matched.append(target)
+
+        return matched
+
+    def _bfs_check_membership(
+        self,
+        service: typing.Any,
+        target_group: str,
+        direct_groups: typing.Set[str],
+        max_depth: int = 5,
+    ) -> bool:
+        """
+        BFS through a target group's members to find if any of the user's direct
+        groups are nested within it.
+
+        Args:
+            service: Admin SDK Directory API service
+            target_group: The group to search through
+            direct_groups: Set of user's direct group emails (lowercased)
+            max_depth: Maximum BFS depth
+
+        Returns:
+            True if any direct group is found nested within target_group
+        """
+        # Queue of (group_email, depth) pairs
+        queue: typing.List[typing.Tuple[str, int]] = [(target_group, 0)]
+        visited: typing.Set[str] = {target_group.lower()}
+
+        while queue:
+            current_group, depth = queue.pop(0)
+
+            if depth >= max_depth:
+                continue
+
+            try:
+                page_token: typing.Optional[str] = None
+                while True:
+                    request = service.members().list(
+                        groupKey=current_group,
+                        pageToken=page_token,
+                    )
+                    response = request.execute()
+
+                    for member in response.get("members", []):
+                        member_email = member.get("email", "").lower()
+                        member_type = member.get("type", "")
+
+                        # If this member is one of user's direct groups, we found a match
+                        if member_type == "GROUP" and member_email in direct_groups:
+                            return True
+
+                        # Queue nested groups for further exploration
+                        if member_type == "GROUP" and member_email not in visited:
+                            visited.add(member_email)
+                            queue.append((member_email, depth + 1))
+
+                    page_token = response.get("nextPageToken")
+                    if not page_token:
+                        break
+            except Exception:
+                logger.debug(
+                    "Error listing members for %s, skipping",
+                    current_group,
+                    exc_info=True,
+                )
+                continue
+
+        return False
 
     def get_cache_stats(self) -> typing.Dict[str, typing.Any]:
         """

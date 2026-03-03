@@ -481,18 +481,42 @@ async def check_access(request: Request):
 
 ## Google Workspace Groups Setup
 
-To enable group fetching, you need to:
+### Cloud Identity (Enterprise / Cloud Identity Premium)
+
+To enable group fetching with Cloud Identity (supports transitive groups natively):
 
 1. **Create a Service Account** in Google Cloud Console
-
 2. **Grant the Groups Reader role** to the service account in Google Workspace Admin Console
-
 3. **Enable Cloud Identity API** in Google Cloud Console
-
-4. **Grant API Scopes**:
-   - `https://www.googleapis.com/auth/cloud-identity.groups.readonly`
-
+4. **Grant API Scopes**: `https://www.googleapis.com/auth/cloud-identity.groups.readonly`
 5. **Configure credentials** in your application
+
+### Admin SDK (Business Standard / Business Plus)
+
+If your Workspace edition doesn't include Cloud Identity Premium, use the Admin SDK path:
+
+1. **Create a Service Account** with domain-wide delegation enabled
+2. **Admin Console** > Security > API Controls > Domain-wide delegation:
+   - Add the service account's client ID
+   - Grant scopes: `https://www.googleapis.com/auth/admin.directory.group.readonly`, `https://www.googleapis.com/auth/admin.directory.group.member.readonly`
+3. **Configure with `delegated_admin`**:
+
+```python
+app.add_middleware(
+    WorkspaceAuthMiddleware,
+    client_id="your-client-id.apps.googleusercontent.com",
+    required_domains=["example.com"],
+    fetch_groups=True,
+    delegated_admin="admin@example.com",          # Triggers Admin SDK path
+    target_groups=[                                # Recommended for efficiency
+        "admins@example.com",
+        "developers@example.com",
+        "team-leads@example.com",
+    ],
+)
+```
+
+**`target_groups`** enables efficient transitive group resolution. Without it, Admin SDK returns only direct group memberships. With it, a BFS algorithm checks if the user belongs to each target (directly or via nested groups) using only 4-7 API calls.
 
 ### Using Default Application Credentials
 

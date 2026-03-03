@@ -6,6 +6,7 @@ import hashlib
 import urllib.parse
 
 import pytest
+import google.auth.credentials
 from unittest.mock import Mock, MagicMock, patch
 from starlette.authentication import AuthenticationError
 from starlette.requests import HTTPConnection
@@ -1035,3 +1036,485 @@ class TestEmptyBearerToken:
 
         with pytest.raises(AuthenticationError):
             await backend.authenticate(conn)
+
+
+@pytest.mark.asyncio
+class TestAdminSDKGroupFetching:
+    """Tests for Admin SDK Directory API group fetching."""
+
+    @patch("googleapiclient.discovery.build")
+    async def test_fetch_direct_groups_via_admin_sdk(
+        self,
+        mock_build,
+        client_id,
+        mock_google_credentials,
+        mock_admin_directory_service,
+    ):
+        """Test fetching direct groups using Admin SDK."""
+        mock_build.return_value = mock_admin_directory_service
+
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            credentials=mock_google_credentials,
+            fetch_groups=True,
+            delegated_admin="admin@example.com",
+        )
+
+        groups = await backend._fetch_user_groups("user@example.com")
+
+        assert "team-a@example.com" in groups
+        assert "devs@example.com" in groups
+        mock_build.assert_called_once_with(
+            "admin",
+            "directory_v1",
+            credentials=mock_google_credentials,
+            cache_discovery=False,
+        )
+
+    @patch("googleapiclient.discovery.build")
+    async def test_transitive_groups_via_target_groups(
+        self,
+        mock_build,
+        client_id,
+        mock_google_credentials,
+        mock_admin_directory_service_with_nesting,
+    ):
+        """Test transitive group resolution with target_groups and nesting."""
+        mock_build.return_value = mock_admin_directory_service_with_nesting
+
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            credentials=mock_google_credentials,
+            fetch_groups=True,
+            delegated_admin="admin@example.com",
+            target_groups=[
+                "team-a@example.com",  # direct match
+                "all-teams@example.com",  # transitive (contains team-a)
+                "unrelated@example.com",  # no match
+            ],
+        )
+
+        groups = await backend._fetch_user_groups("user@example.com")
+
+        assert "team-a@example.com" in groups
+        assert "all-teams@example.com" in groups
+        assert "unrelated@example.com" not in groups
+
+    @patch("googleapiclient.discovery.build")
+    async def test_admin_sdk_service_reused(
+        self,
+        mock_build,
+        client_id,
+        mock_google_credentials,
+        mock_admin_directory_service,
+    ):
+        """Test that Admin SDK service is built once and reused."""
+        mock_build.return_value = mock_admin_directory_service
+
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            credentials=mock_google_credentials,
+            fetch_groups=True,
+            delegated_admin="admin@example.com",
+            enable_group_cache=False,
+        )
+
+        await backend._fetch_user_groups("user1@example.com")
+        await backend._fetch_user_groups("user2@example.com")
+
+        mock_build.assert_called_once()
+
+    @patch("googleapiclient.discovery.build")
+    async def test_no_delegated_admin_uses_cloud_identity(
+        self,
+        mock_build,
+        client_id,
+        mock_google_credentials,
+        mock_cloud_identity_service,
+        sample_groups,
+    ):
+        """Test that without delegated_admin, Cloud Identity API is used."""
+        mock_build.return_value = mock_cloud_identity_service
+
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            credentials=mock_google_credentials,
+            fetch_groups=True,
+            # No delegated_admin set
+        )
+
+        groups = await backend._fetch_user_groups("user@example.com")
+
+        # Should use Cloud Identity path
+        assert groups == sample_groups
+        mock_build.assert_called_once_with(
+            "cloudidentity", "v1", credentials=mock_google_credentials
+        )
+
+    @patch("googleapiclient.discovery.build")
+    async def test_admin_sdk_without_target_groups_returns_direct_only(
+        self,
+        mock_build,
+        client_id,
+        mock_google_credentials,
+        mock_admin_directory_service,
+    ):
+        """Test that Admin SDK without target_groups returns only direct groups."""
+        mock_build.return_value = mock_admin_directory_service
+
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            credentials=mock_google_credentials,
+            fetch_groups=True,
+            delegated_admin="admin@example.com",
+            # No target_groups
+        )
+
+        groups = await backend._fetch_user_groups("user@example.com")
+
+        assert groups == ["team-a@example.com", "devs@example.com"]
+
+    @patch("googleapiclient.discovery.build")
+    async def test_admin_sdk_api_error_returns_empty(
+        self,
+        mock_build,
+        client_id,
+        mock_google_credentials,
+    ):
+        """Test that Admin SDK API errors return empty list."""
+        service = MagicMock()
+        service.groups.return_value.list.return_value.execute.side_effect = Exception(
+            "API Error"
+        )
+        mock_build.return_value = service
+
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            credentials=mock_google_credentials,
+            fetch_groups=True,
+            delegated_admin="admin@example.com",
+        )
+
+        groups = await backend._fetch_user_groups("user@example.com")
+        assert groups == []
+
+
+@pytest.mark.asyncio
+class TestAdminSDKCredentials:
+    """Tests for Admin SDK credential configuration."""
+
+    @patch("google.auth.default")
+    async def test_delegated_admin_uses_correct_scopes(
+        self, mock_default, client_id, mock_google_credentials
+    ):
+        """Test that delegated_admin triggers Admin SDK scopes."""
+        mock_google_credentials.with_subject = Mock(
+            return_value=mock_google_credentials
+        )
+        mock_default.return_value = (mock_google_credentials, "project-id")
+
+        WorkspaceAuthBackend(
+            client_id=client_id,
+            fetch_groups=True,
+            delegated_admin="admin@example.com",
+        )
+
+        mock_default.assert_called_once_with(
+            scopes=[
+                "https://www.googleapis.com/auth/admin.directory.group.readonly",
+                "https://www.googleapis.com/auth/admin.directory.group.member.readonly",
+            ]
+        )
+
+    @patch("google.auth.default")
+    async def test_delegated_admin_calls_with_subject(
+        self, mock_default, client_id, mock_google_credentials
+    ):
+        """Test that with_subject is called with the delegated admin email."""
+        mock_google_credentials.with_subject = Mock(
+            return_value=mock_google_credentials
+        )
+        mock_default.return_value = (mock_google_credentials, "project-id")
+
+        WorkspaceAuthBackend(
+            client_id=client_id,
+            fetch_groups=True,
+            delegated_admin="admin@example.com",
+        )
+
+        mock_google_credentials.with_subject.assert_called_once_with(
+            "admin@example.com"
+        )
+
+    @patch("google.auth.default")
+    async def test_compute_engine_creds_raise_error(self, mock_default, client_id):
+        """Test that Compute Engine creds without with_subject raise clear error."""
+        # Compute Engine creds don't have with_subject
+        compute_creds = Mock(spec=google.auth.credentials.Credentials)
+        compute_creds.refresh = Mock()
+        # Explicitly ensure with_subject doesn't exist
+        if hasattr(compute_creds, "with_subject"):
+            delattr(compute_creds, "with_subject")
+        mock_default.return_value = (compute_creds, "project-id")
+
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            fetch_groups=True,
+            delegated_admin="admin@example.com",
+        )
+
+        # Should handle gracefully — credentials set to None
+        assert backend.credentials is None
+
+    async def test_explicit_creds_bypass_adc(self, client_id, mock_google_credentials):
+        """Test that explicit credentials skip ADC loading entirely."""
+        with patch("google.auth.default") as mock_default:
+            backend = WorkspaceAuthBackend(
+                client_id=client_id,
+                credentials=mock_google_credentials,
+                fetch_groups=True,
+                delegated_admin="admin@example.com",
+            )
+
+            mock_default.assert_not_called()
+            assert backend.credentials == mock_google_credentials
+
+
+@pytest.mark.asyncio
+class TestTargetGroups:
+    """Tests for target_groups optimization."""
+
+    @patch("googleapiclient.discovery.build")
+    async def test_direct_match_optimization(
+        self,
+        mock_build,
+        client_id,
+        mock_google_credentials,
+        mock_admin_directory_service_with_nesting,
+    ):
+        """Test that direct group matches don't trigger BFS."""
+        mock_build.return_value = mock_admin_directory_service_with_nesting
+
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            credentials=mock_google_credentials,
+            fetch_groups=True,
+            delegated_admin="admin@example.com",
+            target_groups=["team-a@example.com", "devs@example.com"],
+        )
+
+        groups = await backend._fetch_user_groups("user@example.com")
+
+        # Both are direct groups — no members.list() should be called
+        assert "team-a@example.com" in groups
+        assert "devs@example.com" in groups
+        mock_admin_directory_service_with_nesting.members.return_value.list.assert_not_called()
+
+    @patch("googleapiclient.discovery.build")
+    async def test_bfs_for_non_direct_targets(
+        self,
+        mock_build,
+        client_id,
+        mock_google_credentials,
+        mock_admin_directory_service_with_nesting,
+    ):
+        """Test BFS resolution for targets not in direct groups."""
+        mock_build.return_value = mock_admin_directory_service_with_nesting
+
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            credentials=mock_google_credentials,
+            fetch_groups=True,
+            delegated_admin="admin@example.com",
+            target_groups=["all-teams@example.com"],
+        )
+
+        groups = await backend._fetch_user_groups("user@example.com")
+
+        assert "all-teams@example.com" in groups
+
+    @patch("googleapiclient.discovery.build")
+    async def test_deep_transitive_resolution(
+        self,
+        mock_build,
+        client_id,
+        mock_google_credentials,
+        mock_admin_directory_service_with_nesting,
+    ):
+        """Test BFS resolves through multiple levels (org -> all-teams -> team-a)."""
+        mock_build.return_value = mock_admin_directory_service_with_nesting
+
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            credentials=mock_google_credentials,
+            fetch_groups=True,
+            delegated_admin="admin@example.com",
+            target_groups=["org@example.com"],
+        )
+
+        groups = await backend._fetch_user_groups("user@example.com")
+
+        # org contains all-teams, which contains team-a (user's direct group)
+        assert "org@example.com" in groups
+
+    @patch("googleapiclient.discovery.build")
+    async def test_depth_limiting(
+        self,
+        mock_build,
+        client_id,
+        mock_google_credentials,
+    ):
+        """Test that BFS respects the depth limit."""
+        service = MagicMock()
+
+        # User's direct groups
+        service.groups.return_value.list.return_value.execute.return_value = {
+            "groups": [{"email": "leaf@example.com"}]
+        }
+
+        # Create a chain deeper than 5 levels
+        def members_side_effect(groupKey, pageToken=None):
+            mock_request = MagicMock()
+            depth_map = {
+                "target@example.com": {
+                    "members": [{"email": "level1@example.com", "type": "GROUP"}]
+                },
+                "level1@example.com": {
+                    "members": [{"email": "level2@example.com", "type": "GROUP"}]
+                },
+                "level2@example.com": {
+                    "members": [{"email": "level3@example.com", "type": "GROUP"}]
+                },
+                "level3@example.com": {
+                    "members": [{"email": "level4@example.com", "type": "GROUP"}]
+                },
+                "level4@example.com": {
+                    "members": [{"email": "level5@example.com", "type": "GROUP"}]
+                },
+                # level5 contains the leaf, but depth limit should prevent reaching it
+                "level5@example.com": {
+                    "members": [{"email": "leaf@example.com", "type": "GROUP"}]
+                },
+            }
+            mock_request.execute.return_value = depth_map.get(groupKey, {"members": []})
+            return mock_request
+
+        service.members.return_value.list.side_effect = members_side_effect
+        mock_build.return_value = service
+
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            credentials=mock_google_credentials,
+            fetch_groups=True,
+            delegated_admin="admin@example.com",
+            target_groups=["target@example.com"],
+        )
+
+        groups = await backend._fetch_user_groups("user@example.com")
+
+        # Should NOT match because the chain is 6 levels deep (exceeds max_depth=5)
+        assert "target@example.com" not in groups
+
+    @patch("googleapiclient.discovery.build")
+    async def test_mixed_direct_and_transitive(
+        self,
+        mock_build,
+        client_id,
+        mock_google_credentials,
+        mock_admin_directory_service_with_nesting,
+    ):
+        """Test mix of direct matches and transitive resolution."""
+        mock_build.return_value = mock_admin_directory_service_with_nesting
+
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            credentials=mock_google_credentials,
+            fetch_groups=True,
+            delegated_admin="admin@example.com",
+            target_groups=[
+                "devs@example.com",  # direct
+                "all-teams@example.com",  # transitive
+                "unrelated@example.com",  # no match
+            ],
+        )
+
+        groups = await backend._fetch_user_groups("user@example.com")
+
+        assert "devs@example.com" in groups
+        assert "all-teams@example.com" in groups
+        assert "unrelated@example.com" not in groups
+
+    @patch("googleapiclient.discovery.build")
+    async def test_empty_target_groups_returns_empty(
+        self,
+        mock_build,
+        client_id,
+        mock_google_credentials,
+        mock_admin_directory_service,
+    ):
+        """Test that empty target_groups list returns empty results."""
+        mock_build.return_value = mock_admin_directory_service
+
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            credentials=mock_google_credentials,
+            fetch_groups=True,
+            delegated_admin="admin@example.com",
+            target_groups=[],
+        )
+
+        groups = await backend._fetch_user_groups("user@example.com")
+
+        assert groups == []
+
+
+@pytest.mark.asyncio
+class TestTargetGroupsWithCloudIdentity:
+    """Tests for target_groups filtering with Cloud Identity API."""
+
+    @patch("googleapiclient.discovery.build")
+    async def test_target_groups_filter_cloud_identity_results(
+        self,
+        mock_build,
+        client_id,
+        mock_google_credentials,
+        mock_cloud_identity_service,
+        sample_groups,
+    ):
+        """Test that target_groups filters Cloud Identity results."""
+        mock_build.return_value = mock_cloud_identity_service
+
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            credentials=mock_google_credentials,
+            fetch_groups=True,
+            target_groups=["admins@example.com", "nonexistent@example.com"],
+            # No delegated_admin — uses Cloud Identity
+        )
+
+        groups = await backend._fetch_user_groups("user@example.com")
+
+        assert groups == ["admins@example.com"]
+
+    @patch("googleapiclient.discovery.build")
+    async def test_no_target_groups_returns_all_cloud_identity(
+        self,
+        mock_build,
+        client_id,
+        mock_google_credentials,
+        mock_cloud_identity_service,
+        sample_groups,
+    ):
+        """Test that without target_groups, all Cloud Identity results are returned."""
+        mock_build.return_value = mock_cloud_identity_service
+
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            credentials=mock_google_credentials,
+            fetch_groups=True,
+            # No target_groups
+        )
+
+        groups = await backend._fetch_user_groups("user@example.com")
+
+        assert groups == sample_groups

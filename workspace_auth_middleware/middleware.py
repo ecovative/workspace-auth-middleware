@@ -98,6 +98,12 @@ class WorkspaceAuthMiddleware(
         group_cache_ttl: Group cache time-to-live in seconds (default: 300)
         group_cache_maxsize: Maximum number of cached group entries (default: 500)
         enable_session_auth: Enable session-based authentication (default: True)
+        delegated_admin: Workspace admin email for domain-wide delegation. When set,
+                        uses Admin SDK Directory API instead of Cloud Identity API.
+                        Required for Business Standard (which lacks Cloud Identity Premium).
+        target_groups: Specific groups to check membership for. Dramatically improves
+                      Admin SDK efficiency by avoiding full domain graph traversal.
+                      Also filters Cloud Identity API results when set.
         on_error: Optional custom error handler (Request, AuthenticationError) -> Response
     """
 
@@ -116,6 +122,8 @@ class WorkspaceAuthMiddleware(
         group_cache_ttl: int = 300,
         group_cache_maxsize: int = 500,
         enable_session_auth: bool = True,
+        delegated_admin: typing.Optional[str] = None,
+        target_groups: typing.Optional[typing.List[str]] = None,
         on_error: typing.Optional[
             typing.Callable[
                 [
@@ -140,6 +148,8 @@ class WorkspaceAuthMiddleware(
             group_cache_ttl=group_cache_ttl,
             group_cache_maxsize=group_cache_maxsize,
             enable_session_auth=enable_session_auth,
+            delegated_admin=delegated_admin,
+            target_groups=target_groups,
         )
 
         # Use custom error handler or default

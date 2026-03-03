@@ -269,6 +269,54 @@ class TestMiddlewareBackendForwarding:
         backend = app.middleware_stack.app.backend  # type: ignore[union-attr]
         assert backend.enable_session_auth is False
 
+    def test_middleware_forwards_delegated_admin(
+        self, client_id, required_domains, mock_google_credentials
+    ):
+        """Test that delegated_admin is forwarded to the backend."""
+
+        async def endpoint(request):
+            return JSONResponse({"message": "ok"})
+
+        app = Starlette(routes=[Route("/test", endpoint)])
+        app.add_middleware(
+            WorkspaceAuthMiddleware,
+            client_id=client_id,
+            required_domains=required_domains,
+            credentials=mock_google_credentials,
+            fetch_groups=True,
+            delegated_admin="admin@example.com",
+        )
+
+        client = TestClient(app)
+        client.get("/test")
+
+        backend = app.middleware_stack.app.backend  # type: ignore[union-attr]
+        assert backend.delegated_admin == "admin@example.com"
+
+    def test_middleware_forwards_target_groups(
+        self, client_id, required_domains, mock_google_credentials
+    ):
+        """Test that target_groups is forwarded to the backend."""
+
+        async def endpoint(request):
+            return JSONResponse({"message": "ok"})
+
+        app = Starlette(routes=[Route("/test", endpoint)])
+        app.add_middleware(
+            WorkspaceAuthMiddleware,
+            client_id=client_id,
+            required_domains=required_domains,
+            credentials=mock_google_credentials,
+            fetch_groups=True,
+            target_groups=["admins@example.com", "devs@example.com"],
+        )
+
+        client = TestClient(app)
+        client.get("/test")
+
+        backend = app.middleware_stack.app.backend  # type: ignore[union-attr]
+        assert backend.target_groups == ["admins@example.com", "devs@example.com"]
+
 
 class TestCustomErrorHandler:
     """Tests for custom error handlers."""

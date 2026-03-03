@@ -4,7 +4,7 @@ Pytest configuration and fixtures for workspace-auth-middleware tests.
 
 import pytest
 import google.auth.credentials
-from unittest.mock import Mock
+from unittest.mock import Mock, MagicMock
 
 
 @pytest.fixture
@@ -69,8 +69,6 @@ def mock_cloud_identity_service(sample_groups):
     """
     Mock Google Cloud Identity service for testing group fetching.
     """
-    from unittest.mock import MagicMock
-
     service = MagicMock()
 
     # Mock the groups().memberships().searchTransitiveGroups().execute() chain
@@ -95,3 +93,100 @@ def client_id():
 def required_domains():
     """Test Google Workspace domains."""
     return ["example.com"]
+
+
+@pytest.fixture
+def delegated_admin():
+    """Test delegated admin email for Admin SDK."""
+    return "admin@example.com"
+
+
+@pytest.fixture
+def mock_admin_directory_service():
+    """
+    Mock Admin SDK Directory API service for testing group fetching.
+
+    Flat structure (no nesting):
+    - user@example.com is a direct member of team-a@example.com, devs@example.com
+    """
+    service = MagicMock()
+
+    # groups().list(userKey=email) returns direct groups
+    service.groups.return_value.list.return_value.execute.return_value = {
+        "groups": [
+            {"email": "team-a@example.com", "name": "Team A"},
+            {"email": "devs@example.com", "name": "Developers"},
+        ]
+    }
+
+    # members().list() returns empty (no nesting)
+    service.members.return_value.list.return_value.execute.return_value = {
+        "members": []
+    }
+
+    return service
+
+
+@pytest.fixture
+def mock_admin_directory_service_with_nesting():
+    """
+    Mock Admin SDK Directory API service with nested group structure.
+
+    Structure:
+    - user@example.com -> direct member of [team-a@example.com, devs@example.com]
+    - team-a@example.com -> nested in all-teams@example.com
+    - all-teams@example.com -> nested in org@example.com
+    """
+    service = MagicMock()
+
+    # groups().list(userKey=email) returns user's direct groups
+    service.groups.return_value.list.return_value.execute.return_value = {
+        "groups": [
+            {"email": "team-a@example.com", "name": "Team A"},
+            {"email": "devs@example.com", "name": "Developers"},
+        ]
+    }
+
+    # members().list(groupKey=...) returns different results per group
+    def members_list_side_effect(groupKey, pageToken=None):
+        mock_request = MagicMock()
+        members_map = {
+            "all-teams@example.com": {
+                "members": [
+                    {"email": "team-a@example.com", "type": "GROUP"},
+                    {"email": "team-b@example.com", "type": "GROUP"},
+                ]
+            },
+            "org@example.com": {
+                "members": [
+                    {"email": "all-teams@example.com", "type": "GROUP"},
+                    {"email": "leadership@example.com", "type": "GROUP"},
+                ]
+            },
+            "team-a@example.com": {
+                "members": [
+                    {"email": "user@example.com", "type": "USER"},
+                ]
+            },
+            "team-b@example.com": {
+                "members": [
+                    {"email": "other@example.com", "type": "USER"},
+                ]
+            },
+            "leadership@example.com": {
+                "members": [
+                    {"email": "boss@example.com", "type": "USER"},
+                ]
+            },
+            "unrelated@example.com": {
+                "members": [
+                    {"email": "stranger@example.com", "type": "USER"},
+                ]
+            },
+        }
+        mock_request.execute.return_value = members_map.get(groupKey, {"members": []})
+        return mock_request
+
+    service.members.return_value.list.side_effect = members_list_side_effect
+
+    return service
