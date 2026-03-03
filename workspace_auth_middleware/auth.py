@@ -870,9 +870,11 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
         """
         groups: typing.List[str] = []
         page_token: typing.Optional[str] = None
+        domain = email.split("@")[1]
 
         while True:
             request = service.groups().list(
+                domain=domain,
                 userKey=email,
                 pageToken=page_token,
             )
