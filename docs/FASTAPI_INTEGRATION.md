@@ -119,6 +119,8 @@ app.add_middleware(
     required_domains=["example.com", "partner.com"],  # Restrict to specific domains
     fetch_groups=True,                                 # Fetch user's Google Workspace groups
     credentials=None,                                  # Custom credentials (default: ADC)
+    delegated_admin=None,                              # Admin email for domain-wide delegation (Admin SDK)
+    target_groups=None,                                # Specific groups to check membership for
     on_error=None,                                    # Custom error handler
 )
 ```
@@ -147,6 +149,10 @@ backend = WorkspaceAuthBackend(
     group_cache_ttl=300,            # Group cache TTL (seconds)
     group_cache_maxsize=500,        # Max cached users
     enable_session_auth=True,       # Enable session-based auth
+
+    # Admin SDK options (for Business Standard — no Cloud Identity Premium)
+    delegated_admin=None,           # Workspace admin email for domain-wide delegation
+    target_groups=None,             # Specific groups to check (enables transitive resolution)
 )
 
 app.add_middleware(AuthenticationMiddleware, backend=backend)

@@ -55,10 +55,14 @@ This document describes the internal architecture and code structure of `workspa
 │  └──────────────────┘  └──────────────────┘                     │
 │           │                      │                              │
 │           ▼                      ▼                              │
-│  ┌──────────────────┐  ┌──────────────────┐                     │
-│  │ Google ID Token  │  │ Cloud Identity   │                     │
-│  │  Verification    │  │  Groups API      │                     │
-│  └──────────────────┘  └──────────────────┘                     │
+│  ┌──────────────────┐  ┌──────────────────────────────────┐     │
+│  │ Google ID Token  │  │ Cloud Identity Groups API        │     │
+│  │  Verification    │  │  (Enterprise / Cloud ID Premium) │     │
+│  └──────────────────┘  │         — OR —                   │     │
+│                         │ Admin SDK Directory API          │     │
+│                         │  (Business Standard via          │     │
+│                         │   delegated_admin)               │     │
+│                         └──────────────────────────────────┘     │
 └───────────────────────────┬─────────────────────────────────────┘
                             │
                             ▼
@@ -177,14 +181,17 @@ app.add_middleware(
 **Responsibilities**:
 - Extract and validate Google ID tokens from `Authorization` header
 - Verify tokens against Google's public keys
-- Fetch user's Google Workspace group memberships via Cloud Identity Groups API
+- Fetch user's Google Workspace group memberships via Cloud Identity Groups API or Admin SDK Directory API
 - Cache token verification and group fetching results
 - Return `(AuthCredentials, WorkspaceUser)` or `None`
 
 **Key Methods**:
 - `authenticate(conn)`: Main authentication entry point (called by Starlette)
 - `_verify_token(token)`: Verify Google ID token (with caching)
-- `_fetch_user_groups(email)`: Fetch user's groups from Cloud Identity API (with caching)
+- `_fetch_user_groups(email)`: Fetch user's groups (dispatches to Cloud Identity or Admin SDK based on `delegated_admin`)
+- `_fetch_groups_sync(creds, email)`: Cloud Identity `searchTransitiveGroups` (Enterprise / Cloud Identity Premium)
+- `_fetch_groups_admin_sdk_sync(creds, email)`: Admin SDK Directory API (Business Standard, requires `delegated_admin`)
+- `_resolve_targeted_groups(service, direct_groups, target_groups)`: BFS transitive resolution for `target_groups`
 - `get_cache_stats()`: Return cache hit rates and statistics
 - `clear_caches()`: Clear all caches
 - `invalidate_token(token)`: Remove specific token from cache
@@ -196,7 +203,7 @@ app.add_middleware(
 3. Verify token (check cache first, then call Google API)
 4. Extract user info from token claims
 5. Validate domain restrictions (if configured)
-6. Fetch user's groups (check cache first, then call Cloud Identity API)
+6. Fetch user's groups (check cache first, then call Cloud Identity API or Admin SDK)
 7. Create `WorkspaceUser` object
 8. Populate scopes: `["authenticated", "group:<group1>", "group:<group2>", ...]`
 9. Return `(AuthCredentials, WorkspaceUser)`
