@@ -1362,6 +1362,36 @@ class TestAdminSDKGroupFetching:
         groups = await backend._fetch_user_groups("user@example.com")
         assert groups == []
 
+    @patch("googleapiclient.discovery.build")
+    async def test_admin_sdk_broken_pipe_retries_with_fresh_service(
+        self,
+        mock_build,
+        client_id,
+        mock_google_credentials,
+        mock_admin_directory_service,
+    ):
+        """Test that BrokenPipeError triggers a retry with a rebuilt service."""
+        # First call raises BrokenPipeError, second call succeeds
+        broken_service = MagicMock()
+        broken_service.groups.return_value.list.return_value.execute.side_effect = (
+            BrokenPipeError("Broken pipe")
+        )
+        mock_build.side_effect = [broken_service, mock_admin_directory_service]
+
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            credentials=mock_google_credentials,
+            fetch_groups=True,
+            delegated_admin="admin@example.com",
+        )
+
+        groups = await backend._fetch_user_groups("user@example.com")
+
+        assert "team-a@example.com" in groups
+        assert "devs@example.com" in groups
+        # Service was built twice: once for the broken attempt, once for the retry
+        assert mock_build.call_count == 2
+
 
 @pytest.mark.asyncio
 class TestAdminSDKCredentials:

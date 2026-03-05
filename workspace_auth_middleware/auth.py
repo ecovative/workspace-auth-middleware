@@ -822,58 +822,77 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
 
         try:
             logger.debug("_fetch_groups_admin_sdk_sync() called for %s", email)
-
-            # Build the Admin SDK Directory API service once, then reuse
-            if self._admin_directory_service is None:
-                logger.debug("Building Admin SDK Directory API service (admin/v1)")
-                self._admin_directory_service = googleapiclient.discovery.build(
-                    "admin", "directory_v1", credentials=creds, cache_discovery=False
-                )
-            service = self._admin_directory_service
-
-            # Step 1: Fetch direct groups
-            direct_groups = self._fetch_direct_groups_sync(service, email)
-            logger.debug(
-                "User %s has %d direct groups: %s",
+            return self._do_fetch_groups_admin_sdk(creds, email)
+        except (ConnectionError, OSError):
+            # Connection errors (BrokenPipeError, etc.) indicate a stale cached
+            # HTTP connection.  Discard the cached service and retry once.
+            logger.warning(
+                "Connection error fetching groups for %s, rebuilding service and "
+                "retrying",
                 email,
-                len(direct_groups),
-                direct_groups,
+                exc_info=True,
             )
-
-            # Step 2: If target_groups is set, check membership via hasMember API
-            if self.target_groups:
-                direct_set = {g.lower() for g in direct_groups}
-                matched: typing.List[str] = []
-
-                for target in self.target_groups:
-                    # Quick check: skip API call if it's a direct group
-                    if target.lower() in direct_set:
-                        matched.append(target)
-                        continue
-
-                    # Use hasMember to check transitive/nested membership
-                    if self._has_member_sync(service, target, email):
-                        matched.append(target)
-
-                logger.debug(
-                    "Resolved %d targeted groups for %s: %s",
-                    len(matched),
-                    email,
-                    matched,
-                )
-                return matched
-            else:
-                logger.info(
-                    "Admin SDK returns direct groups only. Set target_groups for "
-                    "transitive group resolution."
-                )
-                return direct_groups
-
+            self._admin_directory_service = None
+            try:
+                return self._do_fetch_groups_admin_sdk(creds, email)
+            except Exception:
+                logger.error("Admin SDK retry also failed for %s", email, exc_info=True)
+                return []
         except Exception:
             logger.error(
                 "Admin SDK Directory API call failed for %s", email, exc_info=True
             )
             return []
+
+    def _do_fetch_groups_admin_sdk(
+        self, creds: google.auth.credentials.Credentials, email: str
+    ) -> typing.List[str]:
+        """Execute the Admin SDK group fetch logic (called by retry wrapper)."""
+        # Build the Admin SDK Directory API service once, then reuse
+        if self._admin_directory_service is None:
+            logger.debug("Building Admin SDK Directory API service (admin/v1)")
+            self._admin_directory_service = googleapiclient.discovery.build(
+                "admin", "directory_v1", credentials=creds, cache_discovery=False
+            )
+        service = self._admin_directory_service
+
+        # Step 1: Fetch direct groups
+        direct_groups = self._fetch_direct_groups_sync(service, email)
+        logger.debug(
+            "User %s has %d direct groups: %s",
+            email,
+            len(direct_groups),
+            direct_groups,
+        )
+
+        # Step 2: If target_groups is set, check membership via hasMember API
+        if self.target_groups:
+            direct_set = {g.lower() for g in direct_groups}
+            matched: typing.List[str] = []
+
+            for target in self.target_groups:
+                # Quick check: skip API call if it's a direct group
+                if target.lower() in direct_set:
+                    matched.append(target)
+                    continue
+
+                # Use hasMember to check transitive/nested membership
+                if self._has_member_sync(service, target, email):
+                    matched.append(target)
+
+            logger.debug(
+                "Resolved %d targeted groups for %s: %s",
+                len(matched),
+                email,
+                matched,
+            )
+            return matched
+        else:
+            logger.info(
+                "Admin SDK returns direct groups only. Set target_groups for "
+                "transitive group resolution."
+            )
+            return direct_groups
 
     def _fetch_direct_groups_sync(
         self, service: typing.Any, email: str
