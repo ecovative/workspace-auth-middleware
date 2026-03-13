@@ -30,11 +30,6 @@ include = [
     "workspace_auth_middleware/py.typed"
 ]
 
-[[tool.poetry.source]]
-name = "data-systems-artifact-repository"
-url = "https://us-east1-python.pkg.dev/eco-info-system/data-systems-artifact-repository/"
-priority = "supplemental"
-
 [tool.poetry.group.dev.dependencies]
 mypy = "^1.18.2"
 ruff = "^0.15.0"

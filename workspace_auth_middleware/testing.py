@@ -19,6 +19,9 @@ Usage with TestClient (unit tests):
 
 Usage with Playwright (browser tests):
 
+    WARNING: header_mode must NEVER be used in production. It trusts user
+    identity from an HTTP header without cryptographic verification.
+
     app.add_middleware(MockWorkspaceAuthMiddleware, header_mode=True)
     # Then set X-Test-User header with JSON user data from the browser
 """

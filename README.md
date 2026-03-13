@@ -769,6 +769,8 @@ app.add_middleware(MockWorkspaceAuthMiddleware)
 
 ### Browser/Playwright Testing with Header Mode
 
+> **WARNING:** Header mode (`header_mode=True`) must **never** be used in production. It trusts user identity from an HTTP header without any cryptographic verification. It is intended exclusively for local development and testing.
+
 For browser tests, use header mode to pass user data via HTTP headers:
 
 ```python

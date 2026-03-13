@@ -145,6 +145,8 @@ admin = create_workspace_user(
 
 ### Browser/Playwright Testing with Header Mode
 
+> **WARNING:** Header mode (`header_mode=True`) must **never** be used in production. It trusts user identity from an HTTP header without any cryptographic verification. It is intended exclusively for local development and testing.
+
 For end-to-end tests where a real browser makes requests, use header mode. The mock backend reads user identity from an HTTP header instead of Google tokens:
 
 ```python
