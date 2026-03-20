@@ -5,7 +5,16 @@ set -e
 
 # Function to get PEP 440-compliant version
 get_pep440_version() {
-  git describe --tags --long | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)-g[0-9a-f]+$/\1a\2/'
+  local desc
+  desc=$(git describe --tags --long)
+  local version commits
+  version=$(echo "$desc" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)-g[0-9a-f]+$/\1/')
+  commits=$(echo "$desc" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)-g[0-9a-f]+$/\2/')
+  if [ "$commits" -eq 0 ]; then
+    echo "$version"
+  else
+    echo "${version}a${commits}"
+  fi
 }
 
 # Define the path to your pyproject.toml
