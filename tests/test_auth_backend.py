@@ -1692,3 +1692,143 @@ class TestTargetGroupsWithCloudIdentity:
         groups = await backend._fetch_user_groups("user@example.com")
 
         assert groups == sample_groups
+
+
+@pytest.mark.asyncio
+class TestPublicPaths:
+    """Tests for public_paths authentication exemption."""
+
+    async def test_exact_path_match_skips_auth(self, client_id):
+        """Requests to an exact public path should return None (anonymous)."""
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            fetch_groups=False,
+            public_paths=["/v1/webhooks/pubsub"],
+        )
+
+        conn = Mock(spec=HTTPConnection)
+        conn.url = Mock()
+        conn.url.path = "/v1/webhooks/pubsub"
+        conn.headers = {"authorization": "Bearer some-token"}
+
+        result = await backend.authenticate(conn)
+        assert result is None
+
+    async def test_prefix_match_skips_auth(self, client_id):
+        """Requests to a sub-path of a public path should also skip auth."""
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            fetch_groups=False,
+            public_paths=["/v1/webhooks"],
+        )
+
+        conn = Mock(spec=HTTPConnection)
+        conn.url = Mock()
+        conn.url.path = "/v1/webhooks/pubsub"
+        conn.headers = {"authorization": "Bearer some-token"}
+
+        result = await backend.authenticate(conn)
+        assert result is None
+
+    async def test_non_matching_path_still_requires_auth(self, client_id):
+        """Requests to non-public paths should proceed with normal auth."""
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            fetch_groups=False,
+            public_paths=["/v1/webhooks/pubsub"],
+        )
+
+        conn = Mock(spec=HTTPConnection)
+        conn.url = Mock()
+        conn.url.path = "/v1/alarms"
+        conn.headers = {}
+
+        result = await backend.authenticate(conn)
+        # No auth header and not a public path -> None (anonymous)
+        assert result is None
+
+    async def test_non_matching_path_with_token_authenticates(
+        self, client_id, valid_id_token_claims, mock_id_token
+    ):
+        """Non-public paths with a bearer token should still authenticate."""
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            fetch_groups=False,
+            public_paths=["/v1/webhooks/pubsub"],
+        )
+
+        conn = Mock(spec=HTTPConnection)
+        conn.url = Mock()
+        conn.url.path = "/v1/alarms"
+        conn.headers = {"authorization": f"Bearer {mock_id_token}"}
+
+        with patch(
+            "google.oauth2.id_token.verify_oauth2_token",
+            return_value=valid_id_token_claims,
+        ):
+            result = await backend.authenticate(conn)
+
+        assert result is not None
+        credentials, user = result
+        assert user.email == "user@example.com"
+
+    async def test_empty_public_paths_does_not_skip(self, client_id):
+        """Empty public_paths list should not skip auth for any path."""
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            fetch_groups=False,
+            public_paths=[],
+        )
+
+        conn = Mock(spec=HTTPConnection)
+        conn.url = Mock()
+        conn.url.path = "/v1/webhooks/pubsub"
+        conn.headers = {}
+
+        result = await backend.authenticate(conn)
+        assert result is None  # No auth header -> anonymous (not skipped)
+
+    async def test_none_public_paths_does_not_skip(self, client_id):
+        """None public_paths (default) should not skip auth."""
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            fetch_groups=False,
+        )
+
+        assert backend.public_paths == []
+
+    async def test_trailing_slash_prefix_match(self, client_id):
+        """Public path with trailing slash should match sub-paths."""
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            fetch_groups=False,
+            public_paths=["/health/"],
+        )
+
+        conn = Mock(spec=HTTPConnection)
+        conn.url = Mock()
+        conn.url.path = "/health/ready"
+        conn.headers = {"authorization": "Bearer some-token"}
+
+        result = await backend.authenticate(conn)
+        assert result is None
+
+    async def test_partial_path_does_not_match(self, client_id):
+        """A path that starts with the same characters but isn't a sub-path should not match."""
+        backend = WorkspaceAuthBackend(
+            client_id=client_id,
+            fetch_groups=False,
+            public_paths=["/v1/web"],
+        )
+
+        conn = Mock(spec=HTTPConnection)
+        conn.url = Mock()
+        conn.url.path = "/v1/webhooks/pubsub"
+        conn.headers = {}
+
+        # /v1/webhooks/pubsub does NOT start with /v1/web/
+        # and is NOT equal to /v1/web, so it should NOT be treated as public
+        result = await backend.authenticate(conn)
+        assert (
+            result is None
+        )  # anonymous because no auth header, but NOT because of public_paths

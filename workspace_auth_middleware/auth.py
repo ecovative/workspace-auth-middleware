@@ -198,6 +198,7 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
         enable_session_auth: bool = True,
         delegated_admin: typing.Optional[str] = None,
         target_groups: typing.Optional[typing.List[str]] = None,
+        public_paths: typing.Optional[typing.List[str]] = None,
     ):
         # Normalize client_id to a list
         self.client_ids: typing.List[str] = (
@@ -226,6 +227,7 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
         self.enable_session_auth = enable_session_auth
         self.delegated_admin = delegated_admin
         self.target_groups = target_groups
+        self.public_paths: typing.List[str] = list(public_paths or [])
 
         # Cache configuration
         self.enable_token_cache = enable_token_cache
@@ -337,6 +339,20 @@ class WorkspaceAuthBackend(starlette.authentication.AuthenticationBackend):
             - Authorization: Bearer <google_id_token>
         """
         logger.debug("authenticate() called for path: %s", conn.url.path)
+
+        # Skip authentication for public paths
+        if self.public_paths:
+            request_path = conn.url.path
+            for public_path in self.public_paths:
+                if request_path == public_path or request_path.startswith(
+                    public_path.rstrip("/") + "/"
+                ):
+                    logger.debug(
+                        "Path %s matches public_path %s, skipping auth",
+                        request_path,
+                        public_path,
+                    )
+                    return None
 
         # Try session authentication first (if enabled)
         if self.enable_session_auth:

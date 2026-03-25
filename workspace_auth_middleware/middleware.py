@@ -104,6 +104,10 @@ class WorkspaceAuthMiddleware(
         target_groups: Specific groups to check membership for. Dramatically improves
                       Admin SDK efficiency by avoiding full domain graph traversal.
                       Also filters Cloud Identity API results when set.
+        public_paths: Optional list of URL path prefixes to skip authentication for
+                     (e.g., ["/v1/webhooks/", "/health"]). Requests matching these
+                     paths will be treated as anonymous (request.user.is_authenticated
+                     will be False). Useful for Pub/Sub push endpoints and health checks.
         on_error: Optional custom error handler (Request, AuthenticationError) -> Response
     """
 
@@ -124,6 +128,7 @@ class WorkspaceAuthMiddleware(
         enable_session_auth: bool = True,
         delegated_admin: typing.Optional[str] = None,
         target_groups: typing.Optional[typing.List[str]] = None,
+        public_paths: typing.Optional[typing.List[str]] = None,
         on_error: typing.Optional[
             typing.Callable[
                 [
@@ -150,6 +155,7 @@ class WorkspaceAuthMiddleware(
             enable_session_auth=enable_session_auth,
             delegated_admin=delegated_admin,
             target_groups=target_groups,
+            public_paths=public_paths,
         )
 
         # Use custom error handler or default
