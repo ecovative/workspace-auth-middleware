@@ -909,13 +909,25 @@ async def invalidate_user_groups(email: str, request: Request):
 
 When combining multiple middleware, order matters:
 
+**`add_middleware` is LIFO** — the last call added is outermost and runs first. Add `WorkspaceAuthMiddleware` first so it ends up inner; add `SessionMiddleware` last so it ends up outer and runs first:
+
 ```python
-# Correct order
-app.add_middleware(SessionMiddleware, secret_key="...")    # First
-app.add_middleware(WorkspaceAuthMiddleware, client_id="...") # Second
+# Correct order with add_middleware (LIFO — last added runs first)
+app.add_middleware(WorkspaceAuthMiddleware, client_id="...")  # Added first → inner → runs second
+app.add_middleware(SessionMiddleware, secret_key="...")        # Added last  → outer → runs first ✓
 ```
 
-**Rule**: Session middleware must come before authentication middleware.
+With the `Middleware` list constructor, order is natural (index 0 = outermost = runs first):
+
+```python
+# Correct order with Middleware list (natural order — index 0 runs first)
+app = FastAPI(middleware=[
+    Middleware(SessionMiddleware, secret_key="..."),          # index 0 → outer → runs first ✓
+    Middleware(AuthenticationMiddleware, backend=backend),    # index 1 → inner → runs second
+])
+```
+
+**Rule**: `SessionMiddleware` must run before `AuthenticationMiddleware`. Getting this wrong causes session auth to silently fall through to bearer token (no error — just session data ignored).
 
 ### 2. Domain Restrictions
 
