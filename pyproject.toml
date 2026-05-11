@@ -31,7 +31,7 @@ include = [
 ]
 
 [tool.poetry.group.dev.dependencies]
-mypy = "^1.18.2"
+mypy = "^2.0.0"
 ruff = "^0.15.0"
 pytest = "^9.0.2"
 pre-commit = "^4.3.0"
