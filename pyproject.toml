@@ -46,7 +46,7 @@ types-cachetools = "^6.2.0.20250827"
 pytest-asyncio = "^1.2.0"
 httpx = "^0.28.1"
 types-requests = "^2.32.4.20250913"
-types-authlib = "^1.6.5.20251005"
+types-authlib = "^1.6.11.20260518"
 authlib = ">=1.6.5,<2.0.0"
 
 [tool.mypy]
