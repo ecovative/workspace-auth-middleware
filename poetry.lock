@@ -26,14 +26,14 @@ files = [
 
 [[package]]
 name = "anyio"
-version = "4.13.0"
+version = "4.14.0"
 description = "High-level concurrency and networking framework on top of asyncio or Trio"
 optional = false
 python-versions = ">=3.10"
 groups = ["main", "dev"]
 files = [
-    {file = "anyio-4.13.0-py3-none-any.whl", hash = "sha256:08b310f9e24a9594186fd75b4f73f4a4152069e3853f1ed8bfbf58369f4ad708"},
-    {file = "anyio-4.13.0.tar.gz", hash = "sha256:334b70e641fd2221c1505b3890c69882fe4a2df910cba14d97019b90b24439dc"},
+    {file = "anyio-4.14.0-py3-none-any.whl", hash = "sha256:dd9b7a2a9799ed6552fde617b2c5df02b7fdd7d88392fc48101e51bae46164d9"},
+    {file = "anyio-4.14.0.tar.gz", hash = "sha256:b47c1f9ccf73e67021df785332508f99379c68fa7d0684e8e3492cb1d4b23f89"},
 ]
 
 [package.dependencies]
@@ -532,14 +532,14 @@ uritemplate = ">=3.0.1,<5"
 
 [[package]]
 name = "google-auth"
-version = "2.54.0"
+version = "2.55.0"
 description = "Google Authentication Library"
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "google_auth-2.54.0-py3-none-any.whl", hash = "sha256:784e9837f92244141250470d47c893df50cbab485ce491aca5e9deb558ad2b48"},
-    {file = "google_auth-2.54.0.tar.gz", hash = "sha256:130f6fd5e3f497fdad897a23ed9489973437edf561238c4b92a4d02c435f8af9"},
+    {file = "google_auth-2.55.0-py3-none-any.whl", hash = "sha256:a17cef9dedf98c4ebae2fb0c48c8f75952c877cbc2efe09f329ef16c2783d88a"},
+    {file = "google_auth-2.55.0.tar.gz", hash = "sha256:fcd3a130f575fa36403d38774af1c64a4fbfbca09215f0589d2372b5119697cb"},
 ]
 
 [package.dependencies]
@@ -1716,14 +1716,14 @@ standard = ["colorama (>=0.4) ; sys_platform == \"win32\"", "httptools (>=0.6.3)
 
 [[package]]
 name = "virtualenv"
-version = "21.5.0"
+version = "21.5.1"
 description = "Virtual Python Environment builder"
 optional = false
 python-versions = ">=3.9"
 groups = ["dev"]
 files = [
-    {file = "virtualenv-21.5.0-py3-none-any.whl", hash = "sha256:8f7c38605023688c89789f566959006af6d61c99eeeb9e58342eb780c5761e5e"},
-    {file = "virtualenv-21.5.0.tar.gz", hash = "sha256:98847aadf5e2037e0e4d2e19528eb3aca6f23906422e59a510bff231a6d32fce"},
+    {file = "virtualenv-21.5.1-py3-none-any.whl", hash = "sha256:55aa670b67bbfb991b03fda39bd3276d92c419d702376e98c5df1c9989a26783"},
+    {file = "virtualenv-21.5.1.tar.gz", hash = "sha256:dca3bf98275a59c652b69d68e73433e597d977c2da9198882479d1a7188009c8"},
 ]
 
 [package.dependencies]
